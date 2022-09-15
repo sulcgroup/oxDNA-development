@@ -22,7 +22,7 @@ def partition(s, d):
 # every defined macro in model.h must be imported in this module
 def import_model_constants():
     PI = np.pi
-    model = os.path.join(os.path.dirname(__file__), "../src/model.h")
+    model = os.path.join(os.path.dirname(__file__), "../../src/model.h")
     f = open(model)
     for line in f.readlines():
         # line = line.strip().partition("//")[0].strip()

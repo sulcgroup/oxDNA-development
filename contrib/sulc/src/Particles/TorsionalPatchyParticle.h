@@ -41,7 +41,8 @@ public:
 
 
 public:
-	TorsionalPatchyParticle(std::vector<LR_vector> base_patches, int nt, number sigma);
+	//TorsionalPatchyParticle(std::vector<LR_vector> base_patches, int nt, number sigma);
+	TorsionalPatchyParticle(std::vector<LR_vector> base_patches, std::vector<LR_vector> a1_patches, std::vector<LR_vector> a2_patches, int nt, number sigma);
 	TorsionalPatchyParticle(int N_patches, int nt, number sigma);
 	virtual ~TorsionalPatchyParticle();
 

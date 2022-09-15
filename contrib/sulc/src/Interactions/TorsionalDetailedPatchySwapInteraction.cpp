@@ -6,13 +6,87 @@
  */
 
 #include "TorsionalDetailedPatchySwapInteraction.h"
-#include "Particles/CustomParticle.h"
+//#include "Particles/CustomParticle.h"
 #include "Utilities/Utils.h"
 #include "../Particles/TorsionalPatchyParticle.h"
 
 #include <string>
 
 using namespace std;
+
+
+number TorsionalDetailedPatchySwapInteraction::_V_mod(int type, number t)
+{
+	number val = (number) 0;
+	t -= PLPATCHY_THETA_T0[type];
+	if (t < 0)
+		t *= -1;
+
+	if (t < PLPATCHY_THETA_TC[type]) {
+		if (t > PLPATCHY_THETA_TS[type]) {
+			// smoothing
+			val = PLPATCHY_THETA_B[type] * SQR(PLPATCHY_THETA_TC[type] - t);
+		} else
+			val = (number) 1.f - PLPATCHY_THETA_A[type] * SQR(t);
+	}
+
+	return val;
+}
+
+
+
+number TorsionalDetailedPatchySwapInteraction::_V_modD(int type, number t)
+{
+	number val = (number) 0;
+	number m = (number) 1;
+	t -= PLPATCHY_THETA_T0[type];
+	// this function is a parabola centered in t0. If t < 0 then the value of the function
+	// is the same but the value of its derivative has the opposite sign, so m = -1
+	if(t < 0) {
+		t *= -1;
+		m = (number) -1;
+	}
+
+	if(t < PLPATCHY_THETA_TC[type]) {
+		if(t > PLPATCHY_THETA_TS[type]) {
+			// smoothing
+			val = m * 2 * PLPATCHY_THETA_B[type] * (t - PLPATCHY_THETA_TC[type]);
+		}
+		else val = -m * 2 * PLPATCHY_THETA_A[type] * t;
+	}
+
+	return val;
+}
+
+
+
+number TorsionalDetailedPatchySwapInteraction::_V_modDsin(int type, number t)
+{
+	    number val = (number) 0;
+		number m = (number) 1;
+		number tt0 = t - PLPATCHY_THETA_T0[type];
+		// this function is a parabola centered in t0. If t < 0 then the value of the function
+		// is the same but the value of its derivative has the opposite sign, so m = -1
+		if(tt0 < 0) {
+			tt0 *= -1;
+			m = (number) -1;
+		}
+
+		if(tt0 < PLPATCHY_THETA_TC[type]) {
+		    	number sint = sin(t);
+			if(tt0 > PLPATCHY_THETA_TS[type]) {
+				// smoothing
+				val = m * 2 * PLPATCHY_THETA_B[type] * (tt0 - PLPATCHY_THETA_TC[type]) / sint;
+			}
+			else {
+			    if(SQR(sint) > 1e-8) val = -m * 2 * PLPATCHY_THETA_A[type] * tt0 / sint;
+			    else val = -m * 2 * PLPATCHY_THETA_A[type];
+			}
+		}
+
+		return val;
+}
+
 
 TorsionalDetailedPatchySwapInteraction::TorsionalDetailedPatchySwapInteraction() :
 				BaseInteraction() {
@@ -31,6 +105,7 @@ void TorsionalDetailedPatchySwapInteraction::get_settings(input_file &inp) {
 	getInputString(&inp, "DPS_interaction_matrix_file", _interaction_matrix_file, 1);
 
     getInputBool(&inp, "use_torsion", &_use_torsion, 0);
+    getInputNumber(&inp, "narrow_type", &_narrow_type, 0);
 
 	getInputBool(&inp, "DPS_is_KF", &_is_KF, 0);
 	if(_is_KF) {
@@ -40,7 +115,7 @@ void TorsionalDetailedPatchySwapInteraction::get_settings(input_file &inp) {
 
         if ( _use_torsion)
         {
-            throw oxDNAException("use_torsion option is not supported with KF potential")
+            throw oxDNAException("use_torsion option is not supported with KF potential");
         }
 	}
 	else {
@@ -69,7 +144,7 @@ void TorsionalDetailedPatchySwapInteraction::init() {
 		// this makes sure that at the cutoff the angular modulation is 10^-2
 		_patch_angular_cutoff = (1. - _patch_cosmax) * std::pow(4 * std::log(10), 1. / _patch_power);
 
-		OX_LOG(Logger::LOG_INFO, "FS-KF parameters: lambda = %lf, patch_delta = %lf, patch_power = %d, patch_cosmax = %lf, patch_angular_cutoff = %lf", _lambda, _patch_delta, _patch_power, _patch_cosmax, _patch_angular_cutoff);
+		OX_LOG(Logger::LOG_INFO, "FS-KF parameters: lambda = %lf, patch_delta = %lf, patch_power = %d, patch_cosmax = %lf, patch_angular_cutoff = %lf, ", _lambda, _patch_delta, _patch_power, _patch_cosmax, _patch_angular_cutoff);
 	}
 	else {
 		ADD_INTERACTION_TO_MAP(PATCHY, _patchy_two_body_point);
@@ -81,8 +156,57 @@ void TorsionalDetailedPatchySwapInteraction::init() {
 		_A_part = -1. / (B_ss - 1.) / exp(1. / (1. - _rcut_ss / _sigma_ss));
 		_B_part = B_ss * pow(_sigma_ss, 4.);
 
-		OX_LOG(Logger::LOG_INFO, "FS parameters: lambda = %lf, A_part = %lf, B_part = %lf", _lambda, _A_part, _B_part);
+		OX_LOG(Logger::LOG_INFO, "FS parameters: lambda = %lf, A_part = %lf, B_part = %lf, narrow_type = %d, use_torsion=%d", _lambda, _A_part, _B_part,_narrow_type,_use_torsion);
 	}
+	if(_narrow_type == 0)
+	{
+ 	  //default option, very wide!
+	  PLPATCHY_THETA_T0[0] = PLPATCHY_THETA_T0[1] = 0.;
+      PLPATCHY_THETA_TS[0] = PLPATCHY_THETA_TS[1] = 0.7;
+      PLPATCHY_THETA_TC[0] = PLPATCHY_THETA_TC[1] = 3.10559;
+      PLPATCHY_THETA_A[0] = PLPATCHY_THETA_A[1] = 0.46;
+      PLPATCHY_THETA_B[0] = PLPATCHY_THETA_B[1] = 0.133855;
+	}
+	else if(_narrow_type == 1)
+	{
+		  //narrower!
+		  PLPATCHY_THETA_T0[0] =  PLPATCHY_THETA_T0[1] = 0.;
+		  PLPATCHY_THETA_TS[0] =  PLPATCHY_THETA_TS[1] = 0.2555;
+		  PLPATCHY_THETA_TC[0] =  PLPATCHY_THETA_TC[1] = 1.304631441617743;
+		  PLPATCHY_THETA_A[0]  =  PLPATCHY_THETA_A[1] = 3.;
+		  PLPATCHY_THETA_B[0]  =  PLPATCHY_THETA_B[1] = 0.7306043547966398;
+	}
+	else if(_narrow_type == 2)
+	{
+	  //narrower!
+	  PLPATCHY_THETA_T0[0] =  PLPATCHY_THETA_T0[1] = 0.;
+	  PLPATCHY_THETA_TS[0] =  PLPATCHY_THETA_TS[1] = 0.2555;
+	  PLPATCHY_THETA_TC[0] =  PLPATCHY_THETA_TC[1] = 0.782779;
+	  PLPATCHY_THETA_A[0]  =  PLPATCHY_THETA_A[1] = 5.;
+	  PLPATCHY_THETA_B[0]  =  PLPATCHY_THETA_B[1] = 2.42282;
+	}
+	else if (_narrow_type == 3)
+	{
+ 	   //narrower:
+       PLPATCHY_THETA_T0[0] = PLPATCHY_THETA_T0[1] = 0.;
+       PLPATCHY_THETA_TS[0] = PLPATCHY_THETA_TS[1] = 0.17555;
+       PLPATCHY_THETA_TC[0] = PLPATCHY_THETA_TC[1] = 0.4381832920710734;
+       PLPATCHY_THETA_A[0] = PLPATCHY_THETA_A[1] = 13.;
+       PLPATCHY_THETA_B[0] = PLPATCHY_THETA_B[1] = 8.68949241736805;
+	}
+	else if(_narrow_type == 4)
+	{
+      //narrowest:
+      PLPATCHY_THETA_T0[0] = PLPATCHY_THETA_T0[1] = 0.f;
+      PLPATCHY_THETA_TS[0] = PLPATCHY_THETA_TS[1] = 0.17555;
+      PLPATCHY_THETA_TC[0] = PLPATCHY_THETA_TC[1] = 0.322741;
+      PLPATCHY_THETA_A[0] = PLPATCHY_THETA_A[1] = 17.65;
+      PLPATCHY_THETA_B[0] = PLPATCHY_THETA_B[1] = 21.0506;
+	}
+	else{
+		 throw oxDNAException ("Invalid narrow_type option, has to be between 0 and 4");
+	}
+
 
 	_sqr_patch_rcut = SQR(_patch_rcut);
 	_rcut = 1. + _patch_rcut;
@@ -134,21 +258,24 @@ number TorsionalDetailedPatchySwapInteraction::_spherical_patchy_two_body(BasePa
 	return energy;
 }
 
-number TorsionalDetailedPatchySwapInteraction::_patchy_two_body_point(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) {
+number TorsionalDetailedPatchySwapInteraction::_patchy_two_body_point(BaseParticle *pp, BaseParticle *qq, bool compute_r, bool update_forces) {
 	number sqr_r = _computed_r.norm();
 	if(sqr_r > _sqr_rcut) {
 		return (number) 0.f;
 	}
 
-    number  cosa1; 
-    number  cosb1; 
-    number  cosa2b2; 
-    number  ta1;
-    number  tb1;
-    number  ta2b2; 
-    number  fa1; 
-    number  fb1; 
-    number  fa2b2; 
+	TorsionalPatchyParticle *p = dynamic_cast<TorsionalPatchyParticle *>(pp);
+	TorsionalPatchyParticle *q = dynamic_cast<TorsionalPatchyParticle *>(qq);
+
+    number  cosa1 = 1;
+    number  cosb1 = 1;
+    number  cosa2b2 = 1;
+    number  ta1 = 0;
+    number  tb1 = 0;
+    number  ta2b2 = 0;
+    number  fa1 =1;
+    number  fb1 =1;
+    number  fa2b2 = 1;
 	number energy = (number) 0.f;
 
     number r_dist = sqrt(sqr_r);
@@ -222,9 +349,9 @@ number TorsionalDetailedPatchySwapInteraction::_patchy_two_body_point(BasePartic
                             //printf("CRITICAL 2 Adding %f %f %f \n",tmp_force.x,tmp_force.y,tmp_force.z);
                             //torque VM3
                             number fa2b2Dsin =  _V_modDsin(PLPATCH_VM3,ta2b2);
-                            LR_vector<number> dir = -p->_a2_patches[p_patch].cross(q->_a2_patches[q_patch].a2) *  (f1 * fa1 * fb1 * fa2b2Dsin );
-                            LR_vector<number> torqueq = dir;
-                            LR_vector<number> torquep = dir;
+                            LR_vector dir = -p->_a2_patches[p_patch].cross(q->_a2_patches[q_patch]) *  (f1 * fa1 * fb1 * fa2b2Dsin );
+                            LR_vector torqueq = dir;
+                            LR_vector torquep = dir;
 
 
                             //torque VM1
@@ -239,8 +366,8 @@ number TorsionalDetailedPatchySwapInteraction::_patchy_two_body_point(BasePartic
                             torquep += p_patch_pos.cross(tmp_force);
                             torqueq += q_patch_pos.cross(tmp_force);
 
-                            tmp_force += (p->_a1_patches[p_patch] -  r_dist_dir * cosa1) * (f1 * fa1Dsin *  fb1* fa2b2 / rdist);
-                            tmp_force += -(q->_a1_patches[q_patch] +  r_dist_dir * cosb1) * (f1 * fa1 *  fb1Dsin * fa2b2 / rdist);
+                            tmp_force += (p->_a1_patches[p_patch] -  r_dist_dir * cosa1) * (f1 * fa1Dsin *  fb1* fa2b2 / r_dist);
+                            tmp_force += -(q->_a1_patches[q_patch] +  r_dist_dir * cosb1) * (f1 * fa1 *  fb1Dsin * fa2b2 / r_dist);
 
                             p_torque = p->orientationT * torquep;
                             q_torque = q->orientationT * torqueq;
@@ -506,13 +633,16 @@ void TorsionalDetailedPatchySwapInteraction::allocate_particles(std::vector<Base
 			curr_limit += _N_per_species[curr_species];
 		}
 		if(_N_patches[curr_species] > 0 && _base_patches[curr_species].size() > 0) {
-			particles[i] = new PatchyParticle(_base_patches[curr_species], curr_species, 1.);
+			particles[i] = new TorsionalPatchyParticle(_base_patches[curr_species], _a1_patches[curr_species], _a2_patches[curr_species],curr_species, 1.);
 		}
 		else {
-			auto new_particle = new PatchyParticle(_N_patches[curr_species], curr_species, 1.);
+			auto new_particle = new TorsionalPatchyParticle(_N_patches[curr_species], curr_species, 1.);
 			particles[i] = new_particle;
 			// we need to save the base patches so that the CUDA backend has access to them
 			_base_patches[curr_species] = new_particle->base_patches();
+            _a1_patches[curr_species] = new_particle->_a1_patches; //base_patches();
+            _a2_patches[curr_species] = new_particle->_a2_patches; //base_patches();
+            
 		}
 		particles[i]->index = i;
 		particles[i]->strand_id = i;

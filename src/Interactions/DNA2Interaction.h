@@ -33,6 +33,8 @@ protected:
 	number _debye_huckel_prefactor;
 	number _debye_huckel_lambdafactor;
 
+	number _cx_multiplier; //custom factor that multiplies coaxial stacking by _cx_multiplier;
+
 	//the following values are calculated
 	number _debye_huckel_RC; // this is the maximum interaction distance between backbones to interact with DH
 	number _debye_huckel_RHIGH; // distance after which the potential is replaced by a quadratic cut-off

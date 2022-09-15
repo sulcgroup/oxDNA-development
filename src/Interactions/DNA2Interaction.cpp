@@ -66,6 +66,8 @@ void DNA2Interaction::get_settings(input_file &inp) {
 	OX_LOG(Logger::LOG_INFO,"Running Debye-Huckel at salt concentration =  %g", _salt_concentration);
 
 	getInputBool(&inp, "dh_half_charged_ends", &_debye_huckel_half_charged_ends, 0);
+
+
 	//OX_LOG(Logger::LOG_INFO,"dh_half_charged_ends = %s", _debye_huckel_half_charged_ends ? "true" : "false");
 
 	// lambda-factor (the dh length at T = 300K, I = 1.0)
@@ -75,6 +77,16 @@ void DNA2Interaction::get_settings(input_file &inp) {
 	}
 	else {
 		_debye_huckel_lambdafactor = 0.3616455;
+	}
+
+
+	float cxmulti = 1;
+	if(getInputFloat(&inp, "cx_multiplier", &cxmulti, 0) == KEY_FOUND) {
+		_cx_multiplier = (float) cxmulti;
+		OX_LOG(Logger::LOG_INFO, "Using custom coaxial stacking multiplier %f ", _cx_multiplier);
+	}
+	else {
+		_cx_multiplier = 1.;
 	}
 
 	// the prefactor to the Debye-Huckel term
@@ -210,6 +222,9 @@ number DNA2Interaction::_coaxial_stacking(BaseParticle *p, BaseParticle *q, bool
 		return (number) 0.f;
 	}
 
+
+	number cx_multi = (abs(q->btype) >= 300 && abs(p->btype) >= 300) ? _cx_multiplier : 1.f;
+
 	LR_vector rstack = _computed_r + q->int_centers[DNANucleotide::STACK] - p->int_centers[DNANucleotide::STACK];
 	number rstackmod = rstack.module();
 	number energy = (number) 0.f;
@@ -236,7 +251,7 @@ number DNA2Interaction::_coaxial_stacking(BaseParticle *p, BaseParticle *q, bool
 		number f4t5 = _custom_f4(cost5, CXST_F4_THETA5) + _custom_f4(-cost5, CXST_F4_THETA5);
 		number f4t6 = _custom_f4(cost6, CXST_F4_THETA6) + _custom_f4(-cost6, CXST_F4_THETA6);
 
-		energy = f2 * f4t1 * f4t4 * f4t5 * f4t6;
+		energy = cx_multi * f2 * f4t1 * f4t4 * f4t5 * f4t6;
 
 		// makes sense since the above f? can return exacly 0.
 		if(update_forces && energy != 0.) {
@@ -252,7 +267,7 @@ number DNA2Interaction::_coaxial_stacking(BaseParticle *p, BaseParticle *q, bool
 			number f4t6Dsin = _custom_f4D(cost6, CXST_F4_THETA6) - _custom_f4D(-cost6, CXST_F4_THETA6);
 
 			// RADIAL PART
-			force = -rstackdir * (f2D * f4t1 * f4t4 * f4t5 * f4t6);
+			force = -rstackdir *  (f2D * f4t1 * f4t4 * f4t5 * f4t6);
 
 			// THETA1; t1 = LRACOS (-a1 * b1);
 			LR_vector dir = a1.cross(b1);
@@ -282,15 +297,17 @@ number DNA2Interaction::_coaxial_stacking(BaseParticle *p, BaseParticle *q, bool
 			torqueq += -dir * fact;
 
 			// final update of forces and torques for CXST
-			p->force -= force;
-			q->force += force;
+
+			
+			p->force -=  cx_multi * force;
+			q->force +=  cx_multi * force;
 
 			torquep -= p->int_centers[DNANucleotide::STACK].cross(force);
 			torqueq += q->int_centers[DNANucleotide::STACK].cross(force);
 
 			// we need torques in the reference system of the particle
-			p->torque += p->orientationT * torquep;
-			q->torque += q->orientationT * torqueq;
+			p->torque += cx_multi * (p->orientationT * torquep);
+			q->torque += cx_multi * (q->orientationT * torqueq);
 		}
 	}
 
