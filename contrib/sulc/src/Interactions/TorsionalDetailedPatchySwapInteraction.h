@@ -8,7 +8,10 @@
 #ifndef TorsionalDetailedPatchySwapInteraction_H_
 #define TorsionalDetailedPatchySwapInteraction_H_
 
-#include "Interactions/BaseInteraction.h"
+#include <Utilities/oxDNAException.h>
+#define HALF_ISQRT3 0.28867513459481292f
+#include <Utilities/parse_input/parse_input.h>
+#include <Interactions/BaseInteraction.h>
 #include "../Particles/TorsionalPatchyParticle.h"
 
 /**
@@ -165,5 +168,7 @@ public:
 };
 
 extern "C" TorsionalDetailedPatchySwapInteraction *make_TorsionalDetailedPatchySwapInteraction();
+
+
 
 #endif /* TorsionalDetailedPatchySwapInteraction_H_ */

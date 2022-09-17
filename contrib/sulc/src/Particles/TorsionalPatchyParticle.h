@@ -8,8 +8,10 @@
 #ifndef TTorsionalPatchyParticle_H_
 #define TTorsionalPatchyParticle_H_
 
-#include "../../../../src/Particles/BaseParticle.h"
+#include "Particles/BaseParticle.h"
+#include "Particles/PatchyParticle.h"
 
+/*
 struct PatchyBond {
 	BaseParticle *other;
 	number r_p;
@@ -27,6 +29,7 @@ struct PatchyBond {
 	}
 };
 
+*/
 /**
  * @brief Incapsulates a patchy particle.
  */
@@ -56,6 +59,17 @@ public:
 	std::vector<LR_vector> base_patches() {
 		return _base_patches;
 	}
+
+
+	std::vector<LR_vector> a1_patches() {
+		return _a1_patches;
+	}
+
+	std::vector<LR_vector> a2_patches() {
+			return _a2_patches;
+		}
+
+
 
 	std::vector<PatchyBond> bonds;
 };

@@ -6,7 +6,7 @@
  */
 
 #include "TorsionalPatchyParticle.h"
-#include "../../../src/Utilities/oxDNAException.h"
+#include "../Utilities/oxDNAException.h"
 
 #define HALF_ISQRT3 0.28867513459481292f
 
@@ -98,5 +98,8 @@ TorsionalPatchyParticle::~TorsionalPatchyParticle() {
 void TorsionalPatchyParticle::set_positions() {
 	for(uint i = 0; i < N_int_centers(); i++) {
 		int_centers[i] = (orientation * _base_patches[i]) * _sigma;
+		_a1_patches[i] = (_a1_patches[i].x * this->orientationT.v1) + (_a1_patches[i].y * this->orientationT.v2) + (_a1_patches[i].z * this->orientationT.v3); //possibly can be accelerated
+		_a2_patches[i] = (_a2_patches[i].x * this->orientationT.v1) + (_a2_patches[i].y * this->orientationT.v2) + (_a2_patches[i].z * this->orientationT.v3); //possibly can be accelerated
+
 	}
 }

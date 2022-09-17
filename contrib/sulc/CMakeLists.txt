@@ -1,7 +1,7 @@
 SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 ADD_CUSTOM_TARGET(sulc
-	DEPENDS TorsionalDetailedPatchySwapInteraction 
+	DEPENDS TorsionalDetailedPatchySwapInteraction  
 )
 
 # without this bit clang-based compilation fails with some "undefined symbols" errors during the linking stage
@@ -20,10 +20,10 @@ endfunction()
 # Observables
 
 # Interactions
-add_library_no_prefix(TorsionalDetailedPatchySwapInteraction src/Interactions/TorsionalDetailedPatchySwapInteraction.cpp)
+add_library_no_prefix(TorsionalDetailedPatchySwapInteraction src/Interactions/TorsionalDetailedPatchySwapInteraction.cpp src/Particles/TorsionalPatchyParticle.h)
 
 # Particles
-add_library_no_prefix(TorsionalPatchyParticle src/Particles/TorsionalPatchyParticle.cpp)
+#add_library_no_prefix(TorsionalPatchyParticle src/Particles/TorsionalPatchyParticle.cpp)
 
 IF(CUDA)
 	set(CMAKE_MODULE_LINKER_FLAGS  "${CMAKE_MODULE_LINKER_FLAGS} -rdynamic")
