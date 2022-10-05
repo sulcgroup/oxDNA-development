@@ -20,7 +20,7 @@ endfunction()
 # Observables
 
 # Interactions
-add_library_no_prefix(TorsionalDetailedPatchySwapInteraction src/Interactions/TorsionalDetailedPatchySwapInteraction.cpp src/Particles/TorsionalPatchyParticle.h)
+add_library_no_prefix(TorsionalDetailedPatchySwapInteraction src/Interactions/TorsionalDetailedPatchySwapInteraction.cpp src/Particles/TorsionalPatchyParticle.cpp)
 
 # Particles
 #add_library_no_prefix(TorsionalPatchyParticle src/Particles/TorsionalPatchyParticle.cpp)
