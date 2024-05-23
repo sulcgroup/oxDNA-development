@@ -1,4 +1,4 @@
-from sys import stderr
+from oxDNA_analysis_tools.UTILS.logger import log, logger_settings
 from collections import namedtuple
 from typing import Tuple, List
 import numpy as np
@@ -17,7 +17,7 @@ ComputeContext = namedtuple("ComputeContext",["traj_info",
                                               "indexes"])
 
 
-def compute_centroid(ctx:ComputeContext, chunk_size, chunk_id:int) -> Tuple[np.array, float, int]:
+def compute_centroid(ctx:ComputeContext, chunk_size, chunk_id:int) -> Tuple[np.ndarray, float, int]:
     confs = get_confs(ctx.top_info, ctx.traj_info, chunk_id*chunk_size, chunk_size)
     confs = [inbox(c) for c in confs]
     np_confs = np.asarray([[c.positions, c.a1s, c.a3s] for c in confs])
@@ -38,18 +38,22 @@ def compute_centroid(ctx:ComputeContext, chunk_size, chunk_id:int) -> Tuple[np.a
 
     return (centroid_candidate, min_RMSD, t)
 
-def centroid(traj_info:TrajInfo, top_info:TopInfo, ref_conf:Configuration, indexes:List[int]=None, ncpus=1) -> Tuple[Configuration, float]:
+def centroid(traj_info:TrajInfo, top_info:TopInfo, ref_conf:Configuration, indexes:List[int]=[], ncpus=1) -> Tuple[Configuration, float]:
     '''
         Find the configuration in a trajectory closest to a provided reference configuration
 
         Parameters:
-            traj_info: TrajInfo object containing information about the trajectory
-            top_info: TopInfo object containing information about the topology
-            ref_conf: Configuration object containing the reference configuration
-            indexes: (optional) List of indexes of the particles to be used for alignment
-            ncpus: (optional) Number of CPUs to use for alignment
+            traj_info (TrajInfo): Object containing information about the trajectory
+            top_info (TopInfo): Object containing information about the topology
+            ref_conf (Configuration): Object containing the reference configuration
+            indexes (List[int]): (optional) Indexes of the particles to be used for alignment
+            ncpus (int): (optional) Number of CPUs to use for alignment
+
+        Returns:
+            centroid_candidate (Configuration): The configuration with the lowest RMSD to the reference
+            min_RMSD (float): The RMSD from the centroid to the reference
     '''
-    if indexes is None:
+    if indexes == []:
         indexes = list(range(top_info.nbases))
 
     ref_conf = inbox(ref_conf)
@@ -90,6 +94,7 @@ def cli_parser(prog = "centroid.py"):
     parser.add_argument('-p', metavar='num_cpus', nargs=1, type=int, dest='parallel', help="(optional) How many cores to use")
     parser.add_argument('-o', '--output', metavar='output_file', nargs=1, help='The filename to save the centroid to')
     parser.add_argument('-i', metavar='index_file', dest='index_file', nargs=1, help='Alignment and RMSD based on a subset of particles given in a space-separated list in the provided file')
+    parser.add_argument('-q', metavar='quiet', dest='quiet', action='store_const', const=True, default=False, help="Don't print 'INFO' messages to stderr")
     return parser
 
 def main():
@@ -97,6 +102,7 @@ def main():
     args = parser.parse_args()
 
     #system check
+    logger_settings.set_quiet(args.quiet)
     from oxDNA_analysis_tools.config import check
     check(["python", "numpy"])
 
@@ -115,7 +121,7 @@ def main():
             try:
                 indexes = [int(i) for i in indexes]
             except:
-                print("ERROR: The index file must be a space-seperated list of particles.  These can be generated using oxView by clicking the \"Download Selected Base List\" button")
+                raise RuntimeError("The index file must be a space-seperated list of particles.  These can be generated using oxView by clicking the \"Download Selected Base List\" button")
     else:
         indexes = list(range(top_info.nbases))
 
@@ -134,12 +140,12 @@ def main():
         outfile = args.output[0].strip()
     else: 
         outfile = "centroid.dat"
-        print("INFO: No outfile name provided, defaulting to \"{}\"".format(outfile), file=stderr)
+        log("No outfile name provided, defaulting to \"{}\"".format(outfile))
 
-    write_conf(outfile, centroid_candidate)
-    print("INFO: Wrote centroid to {}".format(outfile), file=stderr)
-    print("INFO: Min RMSD: {} nm".format(min_RMSD), file=stderr)
-    print("INFO: Centroid time: {}".format(centroid_candidate.time), file=stderr)
+    write_conf(outfile, centroid_candidate, include_vel=traj_info.incl_v)
+    log("Wrote centroid to {}".format(outfile))
+    log("Min RMSD: {} nm".format(min_RMSD))
+    log("Centroid time: {}".format(centroid_candidate.time))
 
     print("--- %s seconds ---" % (time.time() - start_time))
 

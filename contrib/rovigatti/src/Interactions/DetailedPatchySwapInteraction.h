@@ -19,6 +19,7 @@
  */
 class DetailedPatchySwapInteraction: public BaseInteraction {
 protected:
+	bool _normalise_patches = true;
 	/// Number of particles of each species
 	std::vector<int> _N_per_species;
 	int _N = 0;
@@ -98,6 +99,10 @@ public:
 	virtual void allocate_particles(std::vector<BaseParticle *> &particles);
 
 	void begin_energy_computation() override;
+
+	bool has_custom_stress_tensor() const override {
+		return true;
+	}
 
 	virtual number pair_interaction(BaseParticle *p, BaseParticle *q, bool compute_r = true, bool update_forces = false);
 	virtual number pair_interaction_bonded(BaseParticle *p, BaseParticle *q, bool compute_r = true, bool update_forces = false);

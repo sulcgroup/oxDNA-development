@@ -53,6 +53,7 @@ SET(observables_SOURCES
 	Observables/AverageEnergy.cpp
 	Observables/ContactMap.cpp
 	Observables/AllVectors.cpp
+	Observables/ExternalForce.cpp
 	Observables/Configurations/Configuration.cpp
 	Observables/Configurations/BinaryConfiguration.cpp
 	Observables/Configurations/TclOutput.cpp
@@ -122,6 +123,8 @@ SET(interactions_SOURCES
 	Interactions/PatchyInteractionDan.cpp
 	Interactions/KFInteraction.cpp
 	Interactions/CustomInteraction.cpp
+	Interactions/DRHInteraction.cpp
+	Interactions/DRHInteraction_relax.cpp
 )
 
 SET(move_SOURCES
@@ -129,6 +132,7 @@ SET(move_SOURCES
 	Backends/MCMoves/MoveFactory.cpp
 	Backends/MCMoves/MCTras.cpp
 	Backends/MCMoves/MCRot.cpp
+	Backends/MCMoves/Pivot.cpp
 	Backends/MCMoves/VMMC.cpp
 	Backends/MCMoves/VolumeMove.cpp
 	Backends/MCMoves/MoleculeVolumeMove.cpp
@@ -197,6 +201,7 @@ SET(common_SOURCES
 	Utilities/SignalManager.cpp
 	Utilities/ConfigInfo.cpp
 	Utilities/FlattenedConfigInfo.cpp
+	Utilities/TopologyParser.cpp
 	PluginManagement/PluginManager.cpp
 	${forces_SOURCES}
 	${observables_SOURCES}

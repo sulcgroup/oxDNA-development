@@ -29,6 +29,8 @@ void DetailedPatchySwapInteraction::get_settings(input_file &inp) {
 	getInputNumber(&inp, "DPS_lambda", &_lambda, 0);
 	getInputString(&inp, "DPS_interaction_matrix_file", _interaction_matrix_file, 1);
 
+	getInputBool(&inp, "DPS_normalise_patches", &_normalise_patches, 0);
+
 	getInputBool(&inp, "DPS_is_KF", &_is_KF, 0);
 	if(_is_KF) {
 		getInputInt(&inp, "DPS_patch_power", &_patch_power, 0);
@@ -48,6 +50,18 @@ void DetailedPatchySwapInteraction::get_settings(input_file &inp) {
 void DetailedPatchySwapInteraction::init() {
 	_rep_rcut = pow(2., 1. / 6.);
 	_sqr_rep_rcut = SQR(_rep_rcut);
+
+	if(_normalise_patches) {
+		OX_LOG(Logger::LOG_INFO, "DPS: Custom patches will be normalised");
+	}
+	else {
+		if(_is_KF) {
+			throw oxDNAException("DPS: Using unnormalised patches with the KF potential does not make sense");
+		}
+		else {
+			OX_LOG(Logger::LOG_INFO, "DPS: Custom patches will NOT be normalised");
+		}
+	}
 
 	if(_is_KF) {
 		ADD_INTERACTION_TO_MAP(PATCHY, _patchy_two_body_KF);
@@ -108,6 +122,9 @@ number DetailedPatchySwapInteraction::_spherical_patchy_two_body(BaseParticle *p
 			LR_vector force = _computed_r * (-24. * (lj_part - 2 * SQR(lj_part)) / sqr_r);
 			p->force -= force;
 			q->force += force;
+
+			_update_stress_tensor(p->pos, -force);
+			_update_stress_tensor(p->pos + _computed_r, force);
 		}
 	}
 	else {
@@ -119,6 +136,9 @@ number DetailedPatchySwapInteraction::_spherical_patchy_two_body(BaseParticle *p
 				LR_vector force = _computed_r * (-24. * _spherical_attraction_strength * (lj_part - 2 * SQR(lj_part)) / sqr_r);
 				p->force -= force;
 				q->force += force;
+
+				_update_stress_tensor(p->pos, -force);
+				_update_stress_tensor(p->pos + _computed_r, force);
 			}
 		}
 	}
@@ -129,26 +149,25 @@ number DetailedPatchySwapInteraction::_spherical_patchy_two_body(BaseParticle *p
 number DetailedPatchySwapInteraction::_patchy_two_body_point(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) {
 	number sqr_r = _computed_r.norm();
 	if(sqr_r > _sqr_rcut) {
-		return (number) 0.f;
+		return 0.;
 	}
 
-	number energy = (number) 0.f;
-	for(uint p_patch = 0; p_patch < p->N_int_centers(); p_patch++) {
-		LR_vector p_patch_pos = p->int_centers[p_patch];
-		for(uint q_patch = 0; q_patch < q->N_int_centers(); q_patch++) {
-			LR_vector q_patch_pos = q->int_centers[q_patch];
-
+	number energy = 0.;
+	int p_patch = 0;
+	for(const auto &p_patch_pos : p->int_centers) {
+		int q_patch = 0;
+		for(const auto &q_patch_pos : q->int_centers) {
 			LR_vector patch_dist = _computed_r + q_patch_pos - p_patch_pos;
-			number dist = patch_dist.norm();
-			if(dist < _sqr_patch_rcut) {
+			number r_patch_sqr = patch_dist.norm();
+			if(r_patch_sqr < _sqr_patch_rcut) {
 				uint p_patch_type = _patch_types[p->type][p_patch];
 				uint q_patch_type = _patch_types[q->type][q_patch];
 				number epsilon = _patchy_eps[p_patch_type + _N_patch_types * q_patch_type];
 
 				if(epsilon != 0.) {
-					number r_p = sqrt(dist);
+					number r_p = sqrt(r_patch_sqr);
 					number exp_part = exp(_sigma_ss / (r_p - _rcut_ss));
-					number tmp_energy = epsilon * _A_part * exp_part * (_B_part / SQR(dist) - 1.);
+					number tmp_energy = epsilon * _A_part * exp_part * (_B_part / SQR(r_patch_sqr) - 1.);
 
 					energy += tmp_energy;
 
@@ -158,7 +177,7 @@ number DetailedPatchySwapInteraction::_patchy_two_body_point(BaseParticle *p, Ba
 					PatchyBond q_bond(p, r_p, q_patch, p_patch, tb_energy);
 
 					if(update_forces) {
-						number force_mod = epsilon * _A_part * exp_part * (4. * _B_part / (SQR(dist) * r_p)) + _sigma_ss * tmp_energy / SQR(r_p - _rcut_ss);
+						number force_mod = epsilon * _A_part * exp_part * (4. * _B_part / (SQR(r_patch_sqr) * r_p)) + _sigma_ss * tmp_energy / SQR(r_p - _rcut_ss);
 						LR_vector tmp_force = patch_dist * (force_mod / r_p);
 
 						LR_vector p_torque = p->orientationT * p_patch_pos.cross(tmp_force);
@@ -179,19 +198,24 @@ number DetailedPatchySwapInteraction::_patchy_two_body_point(BaseParticle *p, Ba
 							q_bond.p_torque = -q_torque;
 							q_bond.q_torque = -p_torque;
 						}
-					}
 
-					_particle_bonds(p).emplace_back(p_bond);
-					_particle_bonds(q).emplace_back(q_bond);
+						_update_stress_tensor(p->pos, -tmp_force);
+						_update_stress_tensor(p->pos + _computed_r, tmp_force);
+					}
 
 					if(!no_three_body) {
 						energy += _three_body(p, p_bond, update_forces);
 						energy += _three_body(q, q_bond, update_forces);
 
 					}
+
+					_particle_bonds(p).push_back(p_bond);
+					_particle_bonds(q).push_back(q_bond);
 				}
 			}
+			q_patch++;
 		}
+		p_patch++;
 	}
 
 	return energy;
@@ -293,15 +317,18 @@ number DetailedPatchySwapInteraction::_patchy_two_body_KF(BaseParticle *p, BaseP
 								q_bond.force = (dist_surf < _sigma_ss) ? -angular_force : -tot_force;
 								q_bond.p_torque = -q_torque;
 								q_bond.q_torque = -p_torque;
-							}
 
-							_particle_bonds(p).emplace_back(p_bond);
-							_particle_bonds(q).emplace_back(q_bond);
+								_update_stress_tensor(p->pos, -tot_force);
+								_update_stress_tensor(p->pos + _computed_r, tot_force);
+							}
 
 							if(!no_three_body) {
 								energy += _three_body(p, p_bond, update_forces);
 								energy += _three_body(q, q_bond, update_forces);
 							}
+
+							_particle_bonds(p).push_back(p_bond);
+							_particle_bonds(q).push_back(q_bond);
 						}
 					}
 				}
@@ -362,6 +389,7 @@ void DetailedPatchySwapInteraction::begin_energy_computation() {
 
 	for(int i = 0; i < _N; i++) {
 		_particle_bonds(CONFIG_INFO->particles()[i]).clear();
+		_particle_bonds(CONFIG_INFO->particles()[i]).reserve(2);
 	}
 }
 
@@ -406,18 +434,21 @@ void DetailedPatchySwapInteraction::allocate_particles(std::vector<BaseParticle*
 	int curr_species = 0;
 	for(int i = 0; i < N; i++) {
 		if(i == curr_limit) {
-			curr_species++;
-			curr_limit += _N_per_species[curr_species];
+			do {
+				curr_species++;
+				curr_limit += _N_per_species[curr_species];
+			} while(_N_per_species[curr_species] == 0);
 		}
+		PatchyParticle *new_particle;
 		if(_N_patches[curr_species] > 0 && _base_patches[curr_species].size() > 0) {
-			particles[i] = new PatchyParticle(_base_patches[curr_species], curr_species, 1.);
+			new_particle = new PatchyParticle(_base_patches[curr_species], curr_species, 1., _normalise_patches);
 		}
 		else {
-			auto new_particle = new PatchyParticle(_N_patches[curr_species], curr_species, 1.);
-			particles[i] = new_particle;
-			// we need to save the base patches so that the CUDA backend has access to them
-			_base_patches[curr_species] = new_particle->base_patches();
+			new_particle = new PatchyParticle(_N_patches[curr_species], curr_species, 1.);
 		}
+		particles[i] = new_particle;
+		// we need to save the base patches so that the CUDA backend has access to them
+		_base_patches[curr_species] = new_particle->base_patches();
 		particles[i]->index = i;
 		particles[i]->strand_id = i;
 		particles[i]->type = particles[i]->btype = curr_species;
@@ -479,6 +510,8 @@ void DetailedPatchySwapInteraction::read_topology(int *N_strands, std::vector<Ba
 	_N = particles.size();
 	*N_strands = _N;
 
+	double farthest_patch = 0.5; // default is 0.5
+
 	std::ifstream topology(_topology_filename, ios::in);
 	if(!topology.good()) {
 		throw oxDNAException("Can't read topology file '%s'. Aborting", _topology_filename);
@@ -527,6 +560,11 @@ void DetailedPatchySwapInteraction::read_topology(int *N_strands, std::vector<Ba
 
 		if(spl.size() > 3) {
 			_base_patches[i] = _parse_base_patches(spl[3], _N_patches[i]);
+			for(auto patch : _base_patches[i]) {
+				if(patch.module() > farthest_patch) {
+					farthest_patch = patch.module();
+				}
+			}
 		}
 
 		OX_LOG(Logger::LOG_INFO, "DetailedPatchySwapInteraction: species %d has %d particles and %d patches", i, N_s, _N_patches[i]);
@@ -540,6 +578,9 @@ void DetailedPatchySwapInteraction::read_topology(int *N_strands, std::vector<Ba
 
 	allocate_particles(particles);
 	_parse_interaction_matrix();
+
+	_rcut += 2. * farthest_patch - 1.0;
+	_sqr_rcut = SQR(_rcut);
 }
 
 void DetailedPatchySwapInteraction::check_input_sanity(std::vector<BaseParticle*> &particles) {

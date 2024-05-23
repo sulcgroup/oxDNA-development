@@ -10,22 +10,26 @@
 
 #define HALF_ISQRT3 0.28867513459481292f
 
-PatchyParticle::PatchyParticle(std::vector<LR_vector> base_patches, int nt, number sigma) :
+PatchyParticle::PatchyParticle(std::vector<LR_vector> base_patches, int nt, number sigma, bool normalise_patches) :
 				BaseParticle(),
 				_sigma(sigma),
-				_base_patches(base_patches) {
+				_base_patches(base_patches),
+				_N_patches(base_patches.size()) {
 	type = btype = nt;
 	int_centers.resize(base_patches.size());
 
-	for(uint i = 0; i < N_int_centers(); i++) {
-		_base_patches[i].normalize();
-		_base_patches[i] *= 0.5;
+	if(normalise_patches) {
+		for(uint i = 0; i < N_int_centers(); i++) {
+			_base_patches[i].normalize();
+			_base_patches[i] *= 0.5;
+		}
 	}
 }
 
 PatchyParticle::PatchyParticle(int N_patches, int nt, number sigma) :
 				BaseParticle(),
-				_sigma(sigma) {
+				_sigma(sigma),
+				_N_patches(N_patches) {
 	type = btype = nt;
 	int_centers.resize(N_patches);
 	_base_patches.resize(N_patches);

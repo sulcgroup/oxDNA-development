@@ -73,7 +73,7 @@ public:
 	 */
 	bool add_ext_force(BaseForce *f);
 
-	inline void set_initial_forces(llint step, const std::shared_ptr<BaseBox> &box) {
+	inline void set_initial_forces(llint step, BaseBox *box) {
 		if(is_rigid_body()) {
 			torque = LR_vector((number) 0.f, (number) 0.f, (number) 0.f);
 		}
@@ -135,7 +135,7 @@ public:
 		arg[2] = _pos_shift[2];
 	}
 
-	uint N_int_centers() {
+	virtual uint N_int_centers() {
 		return int_centers.size();
 	}
 
@@ -147,7 +147,7 @@ public:
 
 	/// Needed for specific base pairing
 	int btype;
-
+	
 	/// DNA bonded neighbours
 	BaseParticle *n3, *n5;
 

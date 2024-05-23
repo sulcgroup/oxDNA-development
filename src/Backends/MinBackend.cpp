@@ -37,7 +37,7 @@ void MinBackend::init() {
 }
 
 void MinBackend::_compute_forces() {
-	_interaction->begin_energy_computation();
+	_interaction->begin_energy_and_force_computation();
 
 	_U = (number) 0;
 	for(auto p: _particles) {
@@ -115,7 +115,7 @@ void MinBackend::sim_step() {
 	_mytimer->resume();
 
 	for(auto p: _particles) {
-		p->set_initial_forces(current_step(), _box);
+		p->set_initial_forces(current_step(), _box.get());
 	}
 
 	_timer_lists->resume();

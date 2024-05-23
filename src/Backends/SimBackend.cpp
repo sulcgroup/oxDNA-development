@@ -69,8 +69,8 @@ SimBackend::~SimBackend() {
 	llint total_stderr = 0;
 	OX_LOG(Logger::LOG_INFO, "Aggregated I/O statistics (set debug=1 for file-wise information)");
 	for(auto const &element : _obs_outputs) {
-		llint now = element.second->get_bytes_written();
-		auto fname = element.second->get_output_name();
+		llint now = element->get_bytes_written();
+		auto fname = element->get_output_name();
 		if(!strcmp(fname.c_str(), "stderr") || !strcmp(fname.c_str(), "stdout")) {
 			total_stderr += now;
 		}
@@ -89,6 +89,10 @@ SimBackend::~SimBackend() {
 			OX_LOG(Logger::LOG_NOTHING, "\tFor a total of %8.3lg MB/s\n", (total_file + total_stderr) / ((1024.*1024.) * time_passed));
 		}
 	}
+
+	// we explicitly clean up ConfigInfo so that observables are destructed before PluginManager unloads
+	// any dynamically-linked library
+	ConfigInfo::clear();
 }
 
 void SimBackend::get_settings(input_file &inp) {
@@ -101,6 +105,7 @@ void SimBackend::get_settings(input_file &inp) {
 
 	// initialise the timer
 	_mytimer = TimingManager::instance()->new_timer(std::string("SimBackend"));
+	_obs_timer = TimingManager::instance()->new_timer(string("Observables"), string("SimBackend"));
 
 	_interaction = InteractionFactory::make_interaction(inp);
 	_interaction->get_settings(inp);
@@ -329,6 +334,20 @@ void SimBackend::init() {
 	// initialise external forces
 	ForceFactory::instance()->make_forces(_particles, _box.get());
 
+	// now that molecules and external forces have been initialised we can check what strands can be shifted
+	// and undo the shifting done to particles that belong to those strands that shouldn't be shifted
+	std::vector<bool> printed(_molecules.size(), false); // used to print the message once per strand
+	for(auto p : _particles) {
+		if(!_molecules[p->strand_id]->shiftable()) {
+			p->pos = _box->get_abs_pos(p);
+			p->set_pos_shift(0, 0, 0);
+			if(!printed[p->strand_id] && _enable_fix_diffusion) {
+				OX_LOG(Logger::LOG_INFO, "Strand %d is not shiftable and therefore 'fix_diffusion' will not act on it", p->strand_id);
+				printed[p->strand_id] = true;
+			}
+		}
+	}
+
 	_interaction->set_box(_box.get());
 
 	_lists->init(_rcut);
@@ -338,7 +357,7 @@ void SimBackend::init() {
 
 	// initializes the observable output machinery. This part has to follow read_topology() since _particles has to be initialized
 	for(auto const &element : _obs_outputs) {
-		element.second->init();
+		element->init();
 	}
 
 	OX_LOG(Logger::LOG_INFO, "N: %d, N molecules: %d", N, _molecules.size());
@@ -357,6 +376,7 @@ LR_vector SimBackend::_read_next_binary_vector() {
 	return res;
 }
 
+// here we cannot use _molecules because it has not been initialised yet
 bool SimBackend::read_next_configuration(bool binary) {
 	double Lx, Ly, Lz;
 	// parse headers. Binary and ascii configurations have different headers, and hence
@@ -433,14 +453,8 @@ bool SimBackend::read_next_configuration(bool binary) {
 	// the following part is always carried out in double precision since we want to be able to restart from confs that have
 	// large numbers in the conf file and use float precision later
 	int k, i;
-	std::vector<int> nins(_N_strands);
-	std::vector<LR_vector> scdm(_N_strands);
-
-	// here we cannot use _molecules because it has not been initialised yet
-	for(k = 0; k < _N_strands; k++) {
-		nins[k] = 0;
-		scdm[k] = LR_vector((double) 0., (double) 0., (double) 0.);
-	}
+	std::vector<int> nins(_N_strands, 0);
+	std::vector<LR_vector> scdm(_N_strands, LR_vector((double) 0., (double) 0., (double) 0.));
 
 	i = 0;
 	std::string line;
@@ -524,18 +538,10 @@ bool SimBackend::read_next_configuration(bool binary) {
 
 	for(i = 0; i < N(); i++) {
 		BaseParticle *p = _particles[i];
-		k = p->strand_id;
-
-		LR_vector p_pos = p->pos;
 		if(_enable_fix_diffusion && !binary) {
 			// we need to manually set the particle shift so that the particle absolute position is the right one
-			LR_vector scdm_number(scdm[k].x, scdm[k].y, scdm[k].z);
-			_box->shift_particle(p, scdm_number);
-			p_pos.x -= _box->box_sides().x * (floor(scdm[k].x / _box->box_sides().x));
-			p_pos.y -= _box->box_sides().y * (floor(scdm[k].y / _box->box_sides().y));
-			p_pos.z -= _box->box_sides().z * (floor(scdm[k].z / _box->box_sides().z));
+			_box->shift_particle(p, scdm[p->strand_id]);
 		}
-		p->pos = LR_vector(p_pos.x, p_pos.y, p_pos.z);
 	}
 
 	_interaction->check_input_sanity(_particles);
@@ -556,11 +562,11 @@ void SimBackend::apply_changes_to_simulation_data() {
 }
 
 void SimBackend::add_output(ObservableOutputPtr new_output) {
-	_obs_outputs[new_output->get_output_name()] = new_output;
+	_obs_outputs.push_back(new_output);
 }
 
 void SimBackend::remove_output(std::string output_file) {
-	auto search = _obs_outputs.find(output_file);
+	auto search = std::find_if(_obs_outputs.begin(), _obs_outputs.end(), [output_file](ObservableOutputPtr p) { return p->get_output_name() == output_file; });
 	if(search == _obs_outputs.end()) {
 		throw oxDNAException("The output '%s' does not exist, can't remove it", output_file.c_str());
 	}
@@ -569,9 +575,12 @@ void SimBackend::remove_output(std::string output_file) {
 }
 
 void SimBackend::print_observables() {
+	_mytimer->resume();
+	_obs_timer->resume();
+
 	bool someone_ready = false;
 	for(auto const &element : _obs_outputs) {
-		if(element.second->is_ready(current_step()))
+		if(element->is_ready(current_step()))
 			someone_ready = true;
 	}
 
@@ -580,10 +589,10 @@ void SimBackend::print_observables() {
 
 		llint total_bytes = 0;
 		for(auto const &element : _obs_outputs) {
-			if(element.second->is_ready(current_step())) {
-				element.second->print_output(current_step());
+			if(element->is_ready(current_step())) {
+				element->print_output(current_step());
 			}
-			total_bytes += element.second->get_bytes_written();
+			total_bytes += element->get_bytes_written();
 		}
 
 		// here we control the timings; we leave the code a 30-second grace time to print the initial configuration
@@ -602,13 +611,18 @@ void SimBackend::print_observables() {
 	}
 
 	_backend_info = std::string("");
+
+	_obs_timer->pause();
+	_mytimer->pause();
 }
 
 void SimBackend::update_observables_data() {
+	_obs_timer->resume();
+
 	bool updated = false;
 	for(auto const &obs : _config_info->observables) {
 		if(obs->need_updating(current_step())) {
-			if(!updated) {
+			if(!updated && obs->require_data_on_CPU()) {
 				apply_simulation_data_changes();
 				updated = true;
 			}
@@ -616,6 +630,8 @@ void SimBackend::update_observables_data() {
 			obs->update_data(current_step());
 		}
 	}
+
+	_obs_timer->pause();
 }
 
 void SimBackend::fix_diffusion() {
@@ -649,10 +665,12 @@ void SimBackend::fix_diffusion() {
 	// change particle position and fix orientation matrix;
 	for(int i = 0; i < N(); i++) {
 		BaseParticle *p = _particles[i];
-		_box->shift_particle(p, _molecules[p->strand_id]->com);
-		p->orientation.orthonormalize();
-		p->orientationT = p->orientation.get_transpose();
-		p->set_positions();
+		if(_molecules[p->strand_id]->shiftable()) {
+			_box->shift_particle(p, _molecules[p->strand_id]->com);
+			p->orientation.orthonormalize();
+			p->orientationT = p->orientation.get_transpose();
+			p->set_positions();
+		}
 	}
 
 	number E_after = _interaction->get_system_energy(_particles, _lists.get());
@@ -728,6 +746,11 @@ void SimBackend::print_conf(bool reduced, bool only_last) {
 		_obs_output_last_conf->print_output(current_step());
 		if(_obs_output_last_conf_bin != nullptr) {
 			_obs_output_last_conf_bin->print_output(current_step());
+		}
+
+		// serialise the observables
+		for(auto const &obs : _config_info->observables) {
+			obs->serialise();
 		}
 	}
 }

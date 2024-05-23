@@ -162,7 +162,7 @@ void FIREBackend::_first_step() {
 			p->torque = LR_vector((number) 0, (number) 0, (number) 0);
 
 		}
-		p->set_initial_forces(current_step(), _box);
+		p->set_initial_forces(current_step(), _box.get());
 
 		_lists->single_update(p);
 	}
@@ -185,7 +185,7 @@ void FIREBackend::_second_step() {
 }
 
 void FIREBackend::_compute_forces() {
-	_interaction->begin_energy_computation();
+	_interaction->begin_energy_and_force_computation();
 
 	_U = (number) 0;
 	for(auto p: _particles) {

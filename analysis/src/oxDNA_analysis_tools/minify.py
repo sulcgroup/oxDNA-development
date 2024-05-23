@@ -1,6 +1,7 @@
 import argparse
+from typing import Union
 from os import remove, path
-from sys import stderr
+from oxDNA_analysis_tools.UTILS.logger import log, logger_settings
 from collections import namedtuple
 from numpy import round
 from oxDNA_analysis_tools.UTILS.data_structures import TopInfo, TrajInfo
@@ -26,10 +27,10 @@ def compute(ctx:ComputeContext, chunk_size:int, chunk_id:int):
             conf.a1s -= conf.a1s
             conf.a3s -= conf.a3s
 
-    out = ''.join([conf_to_str(c) for c in confs])
+    out = ''.join([conf_to_str(c,  include_vel=False) for c in confs])
     return out
 
-def minify(traj_info:TrajInfo, top_info:TopInfo, out:str, d:int=None, a:bool=False, ncpus=1):
+def minify(traj_info:TrajInfo, top_info:TopInfo, out:str, d:Union[int,None]=None, a:bool=False, ncpus=1):
     """
         Make a trajectory smaller by discarding some precision.
 
@@ -56,7 +57,7 @@ def minify(traj_info:TrajInfo, top_info:TopInfo, out:str, d:int=None, a:bool=Fal
 
         oat_multiprocesser(traj_info.nconfs, ncpus, compute, callback, ctx)
 
-    print(f"INFO: Wrote aligned trajectory to {out}", file=stderr)
+    log(f"Wrote aligned trajectory to {out}")
 
     return
 
@@ -67,12 +68,14 @@ def cli_parser(prog="minify.py"):
     parser.add_argument('-p', metavar='num_cpus', nargs=1, type=int, dest='parallel', help="(optional) How many cores to use")
     parser.add_argument('-a', action = 'store_true', help='Discard a vectors.')
     parser.add_argument('-d', type=int, nargs=1,  help='Round positions and orientations to the specified number of digits.')
+    parser.add_argument('-q', metavar='quiet', dest='quiet', action='store_const', const=True, default=False, help="Don't print 'INFO' messages to stderr")
     return parser
 
 def main():
     parser = cli_parser(path.basename(__file__))
     args = parser.parse_args()
 
+    logger_settings.set_quiet(args.quiet)
     traj_file = args.trajectory[0]
     out = args.outfile[0]
 

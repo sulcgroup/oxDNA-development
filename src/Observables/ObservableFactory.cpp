@@ -49,6 +49,7 @@
 #include "ContactMap.h"
 #include "AllVectors.h"
 #include "StressAutocorrelation.h"
+#include "ExternalForce.h"
 
 #include "Configurations/PdbOutput.h"
 #include "Configurations/ChimeraOutput.h"
@@ -58,7 +59,9 @@
 #include "Configurations/TEPxyzOutput.h"
 #include "Configurations/JordanOutput.h"
 
+#ifdef JSON_ENABLED
 #include <nlohmann/json.hpp>
+#endif
 
 ObservablePtr ObservableFactory::make_observable(input_file &obs_inp) {
 	char obs_type[512];
@@ -113,6 +116,7 @@ ObservablePtr ObservableFactory::make_observable(input_file &obs_inp) {
 	else if(!strncasecmp(obs_type, "contact_map", 512)) res = std::make_shared<ContactMap>();
 	else if(!strncasecmp(obs_type, "all_vectors", 512)) res = std::make_shared<AllVectors>();
 	else if(!strncasecmp(obs_type, "stress_autocorrelation", 512)) res = std::make_shared<StressAutocorrelation>();
+	else if(!strncasecmp(obs_type, "external_force", 512)) res = std::make_shared<ExternalForce>();
 	else {
 		res = PluginManager::instance()->get_observable(obs_type);
 		if(res == NULL) throw oxDNAException("Observable '%s' not found. Aborting", obs_type);
@@ -148,6 +152,7 @@ std::vector<ObservableOutputPtr> ObservableFactory::make_observables(std::string
 
 	std::string obs_filename;
 	if(getInputString(CONFIG_INFO->sim_input, obs_key.c_str(), obs_filename, 0) == KEY_FOUND) {
+#ifdef JSON_ENABLED
 		OX_LOG(Logger::LOG_INFO, "Parsing JSON observable file %s", obs_filename.c_str());
 
 		ifstream external(obs_filename.c_str());
@@ -184,6 +189,9 @@ std::vector<ObservableOutputPtr> ObservableFactory::make_observables(std::string
 
 		external.close();
 		OX_LOG(Logger::LOG_INFO, "   Observable file parsed");
+#else
+		throw oxDNAException("Cannot parse the JSON observable file %s since JSON has been disabled at compile time", obs_filename.c_str());
+#endif
 	}
 
 	return result;

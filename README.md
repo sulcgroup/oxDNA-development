@@ -30,34 +30,28 @@ The `analysis/paper_examples` folder contains examples for `oxDNA_analysis_tools
 
 **A:** No, oxDNA can run simulations on single cores or single GPUs only.
 
-**Q: Can I simulate systems containing both DNA and RNA?**
-
-**A:** Unfortunately not: at the moment there is no force field for that.
-
 ## Citing oxDNA
+
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.04693/status.svg)](https://doi.org/10.21105/joss.04693)
 
 Please cite these publications for any work that uses the oxDNA simulation package:
 
 - for the code:
-  * P. Šulc et al., J. Chem. Phys. 137, 135101 (2012)
-  * L. Rovigatti et al., J. Comput. Chem. 36, 1 (2015)
-- for the oxDNA model:
-  * T. E. Ouldridge et al., J. Chem. Phys, 134, 085101 (2011)
-- for the oxDNA2 model:
-  * B. E. K. Snodin et al., J. Chem. Phys. 142, 234901 (2015)
-- for the oxRNA model:
-  * P. Šulc et al., J. Chem. Phys. 140, 235102 (2014)
+  * [E. Poppleton et al., J. Open Source Softw. 8, 4693 (2023)](https://doi.org/10.21105/joss.04693)
+- for the CUDA-powered code:
+  * [L. Rovigatti et al., J. Comput. Chem. 36, 1 (2015)](https://doi.org/10.1002/jcc.23763)
 - for oxDNA analysis tools:
-  * E. Poppleton et al., Nucleic Acids Research e72 (2020)
+  * [E. Poppleton et al., Nucleic Acids Research e72 (2020)](https://doi.org/10.1093/nar/gkab324)
     
 ## Acknowledgements
 
-oxDNA depends on a minimum number of external libraries (a c++-14-compliant standard library and Nvidia's CUDA if the user wishes to enable it).
+oxDNA depends on a minimum number of external libraries (a c++-14-compliant standard library and NVIDIA's CUDA if the user wishes to enable it).
 
 Internally, oxDNA uses the following libraries, which are included in the source tree:
 
 * [ExprTk](https://www.partow.net/programming/exprtk/index.html)
 * [nlohmann's JSON library](https://github.com/nlohmann/json)
 * [pybind11](https://github.com/pybind/pybind11)
+* [fast_double_parser](https://github.com/lemire/fast_double_parser)
 
 As far as I know, this is compatible with their licenses. If you are a developer or a mantainer of one of these projects and you think that oxDNA does not comply with your license, please contact us.

@@ -12,7 +12,7 @@
  * This is the default interaction.
  */
 
-class DNAInteraction : public BaseInteraction {
+class DNAInteraction : virtual public BaseInteraction {
 protected:
 	bool _average;
 	std::string _seq_filename;
@@ -108,6 +108,10 @@ public:
 	virtual void init();
 
 	virtual void allocate_particles(std::vector<BaseParticle *> &particles);
+
+	bool has_custom_stress_tensor() const override {
+		return true;
+	}
 
 	virtual number pair_interaction(BaseParticle *p, BaseParticle *q, bool compute_r = true, bool update_forces=false);
 	virtual number pair_interaction_bonded(BaseParticle *p, BaseParticle *q, bool compute_r = true, bool update_forces=false);

@@ -1,5 +1,7 @@
 #include "RNAInteraction2.h"
 
+#include "../Particles/RNANucleotide.h"
+
 RNA2Interaction::RNA2Interaction() :
 				RNAInteraction() {
 	ADD_INTERACTION_TO_MAP(DEBYE_HUCKEL, _debye_huckel);
@@ -30,81 +32,42 @@ number RNA2Interaction::pair_interaction_nonbonded(BaseParticle *p, BaseParticle
 void RNA2Interaction::get_settings(input_file &inp) {
 	RNAInteraction::get_settings(inp);
 
-	float salt;
-	int mismatches;
-	float prefactor; // this is the strength of the interaction
-	float lambdafactor; //Lambda is _debye_huckel_LAMBDAFACTOR / salt^0.5
-	float rh;
-	int lambda_T_dependent = 0;
-	int half_charged_ends = 0;
-	//getInputString(&inp, "topology", _topology_filename, 1);
-
 	// read salt concentration from file, or set it to the default value
-	if(getInputFloat(&inp, "salt_concentration", &salt, 0) == KEY_FOUND) {
-		_salt_concentration = (float) salt;
-	}
-	else {
+	if(getInputNumber(&inp, "salt_concentration", &_salt_concentration, 0) != KEY_FOUND) {
 		_salt_concentration = 1.0f;
 	}
 
 	// read lambda-factor (the dh length at I = 1.0), or set it to the default value
-	if(getInputFloat(&inp, "dh_lambda", &lambdafactor, 0) == KEY_FOUND) {
-		_debye_huckel_lambdafactor = (float) lambdafactor;
-	}
-	else {
+	if(getInputNumber(&inp, "dh_lambda", &_debye_huckel_lambdafactor, 0) != KEY_FOUND) {
 		_debye_huckel_lambdafactor = 0.3667258;
 	}
 
-	if(getInputBoolAsInt(&inp, "lambda_T_dependent", &lambda_T_dependent, 0) == KEY_FOUND && lambda_T_dependent) {
-		OX_LOG(Logger::LOG_INFO,"Running Debye-Huckel with temperature dependent lambda at T = %f",_T);
-		_debye_huckel_lambdafactor *= sqrt(_T / 0.1f);
-	}
-
 	// read the prefactor to the potential, or set it to the default value
-	if(getInputFloat(&inp, "dh_strength", &prefactor, 0) == KEY_FOUND) {
-		_debye_huckel_prefactor = (float) prefactor;
-	}
-	else {
+	if(getInputNumber(&inp, "dh_strength", &_debye_huckel_prefactor, 0) != KEY_FOUND) {
 		_debye_huckel_prefactor = 0.0858; // 0.510473f;  Q = 0.0858
 	}
-	// read the cutoff distance (todo - set the default value to something 
-	// which makes sense, maybe that depends on lambdafactor and salt concentration
+
 	number lambda = _debye_huckel_lambdafactor * sqrt(_T / 0.1f) / sqrt(_salt_concentration);
-	if(getInputFloat(&inp, "debye_huckel_rhigh", &rh, 0) == KEY_FOUND) {
-		_debye_huckel_RHIGH = (float) rh;
-	}
-	else {
+	if(getInputNumber(&inp, "debye_huckel_rhigh", &_debye_huckel_RHIGH, 0) != KEY_FOUND) {
 		_debye_huckel_RHIGH = 3.0 * lambda;
 	}
 	// read the mismatch_repulsion flag (not implemented yet)
-	if(getInputBoolAsInt(&inp, "mismatch_repulsion", &mismatches, 0) == KEY_FOUND) {
-		_mismatch_repulsion = (bool) mismatches;
-	}
-	else {
+	if(getInputBool(&inp, "mismatch_repulsion", &_mismatch_repulsion, 0) != KEY_FOUND) {
 		_mismatch_repulsion = false;
 	}
 	// whether to halve the charge on the terminus of the strand or not (default true)
-	if(getInputBoolAsInt(&inp, "dh_half_charged_ends", &half_charged_ends, 0) == KEY_FOUND) {
-		_debye_huckel_half_charged_ends = (bool) half_charged_ends;
-	}
-	else {
+	if(getInputBool(&inp, "dh_half_charged_ends", &_debye_huckel_half_charged_ends, 0) != KEY_FOUND) {
 		_debye_huckel_half_charged_ends = true;
 	}
 
 	//log it 
-	OX_LOG(Logger::LOG_INFO,"Running Debye-Huckel at salt_concentration =  %g",_salt_concentration);
+	OX_LOG(Logger::LOG_INFO,"Running Debye-Huckel at salt_concentration =  %g", _salt_concentration);
 
 	if(_mismatch_repulsion) {
-		float temp;
-		if(getInputFloat(&inp, "mismatch_repulsion_strength", &temp, 0) == KEY_FOUND) {
-			_RNA_HYDR_MIS = temp;
-		}
-		else {
+		if(getInputNumber(&inp, "mismatch_repulsion_strength", &_RNA_HYDR_MIS, 0) != KEY_FOUND) {
 			_RNA_HYDR_MIS = 1;
 		}
-
 	}
-
 }
 
 //initialise the interaction
@@ -118,10 +81,8 @@ void RNA2Interaction::init() {
 	RNAInteraction::init();
 
 	//compute the DH length lambda
-	number lambda = _debye_huckel_lambdafactor / sqrt(_salt_concentration);
+	number lambda = _debye_huckel_lambdafactor * sqrt(_T / 0.1f) / sqrt(_salt_concentration);
 
-	//_debye_huckel_RHIGH =  _debye_huckel_cutoff_factor * lambda - 0.1; //2.0 * lambda - 0.1;
-	//_debye_huckel_Vrc  = (_debye_huckel_prefactor / (_debye_huckel_cutoff_factor * lambda))  * exp(- _debye_huckel_cutoff_factor ) ;
 	_debye_huckel_Vrc = 0;
 	_minus_kappa = -1.0 / lambda;
 
@@ -135,7 +96,6 @@ void RNA2Interaction::init() {
 	_debye_huckel_RC = x * (q * x + 3. * q * l - 2.0 * exp(x / l) * V * x * l) / (q * (x + l));
 
 	number debyecut = 2. * sqrt(SQR(model->RNA_POS_BACK_a1) + SQR(model->RNA_POS_BACK_a2) + SQR(model->RNA_POS_BACK_a3)) + _debye_huckel_RC;
-	//number debyecut = 2. * sqrt(SQR(POS_BACK) ) + _debye_huckel_RC;
 	if(debyecut > _rcut) {
 		_rcut = debyecut;
 		_sqr_rcut = debyecut * debyecut;
@@ -144,19 +104,6 @@ void RNA2Interaction::init() {
 
 	OX_LOG(Logger::LOG_INFO,"DEBUGGING: rhigh is %g, Cutoff is %g, RC huckel is %g, B huckel is %g, V is %g, lambda is %g ",_debye_huckel_RHIGH,_rcut,_debye_huckel_RC, _debye_huckel_B,_debye_huckel_Vrc,lambda);
 	OX_LOG(Logger::LOG_INFO,"DEBUGGING: dh_half_charged_ends = %s", _debye_huckel_half_charged_ends ? "true" : "false");
-
-//
-	/*
-	 printf("# B = %g\n",_debye_huckel_B);
-	 printf("# Rc = %g\n",_debye_huckel_RC);
-	 printf("# Rh = %g\n",_debye_huckel_RHIGH);
-	 for (double x = 0.01; x <= _debye_huckel_RC +0.02;  x += 0.02)
-	 {
-	 //energy = _debye_huckel(partic)
-	 printf("%g %g \n",x,test_huckel(x));
-	 }
-	 exit(1);
-	 */
 
 	if(_mismatch_repulsion) {
 		float temp = -1.0f * _RNA_HYDR_MIS / model->RNA_HYDR_EPS;
@@ -208,7 +155,6 @@ number RNA2Interaction::_debye_huckel(BaseParticle *p, BaseParticle *q, bool com
 			energy = _debye_huckel_B * SQR(rbackmod - _debye_huckel_RC);
 		}
 		energy *= cut_factor;
-		//update forces are NOT TESTED !!! NEEDS DEBUGGING+careful tests!!!
 		if(update_forces && energy != 0.) {
 			LR_vector force(0., 0., 0.);
 			LR_vector torqueq(0., 0., 0.);

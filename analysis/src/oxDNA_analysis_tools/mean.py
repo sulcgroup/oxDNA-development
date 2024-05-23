@@ -1,9 +1,9 @@
 import argparse
 import os
 import time
-from typing import List
+from typing import List, Union
 import numpy as np
-from sys import stderr
+from oxDNA_analysis_tools.UTILS.logger import log, logger_settings
 from collections import namedtuple
 from random import randrange
 from oxDNA_analysis_tools.align import svd_align
@@ -29,7 +29,7 @@ def compute(ctx:ComputeContext, chunk_size:int, chunk_id:int):
 
         Parameters:
             ctx (ComputeContext): A namedtuple containing file information, the reference conf and the indexes to compute.
-            chunk_size (int): The number of confs to compute in a chunk.
+            chunk_size (int): The number of confs per chunk.
             chunk_id (int): The id of the chunk to compute.
     """
     confs = get_confs(ctx.top_info, ctx.traj_info, chunk_id*chunk_size, chunk_size)
@@ -37,7 +37,7 @@ def compute(ctx:ComputeContext, chunk_size:int, chunk_id:int):
     # Because of fix_diffusion, anything that performs alignment must be inboxed first.
     confs = (inbox(c, center=True) for c in confs)
     
-    # convert to numpy repr for easier math
+    # convert to numpy repr for faster math
     np_coords = np.asarray([[c.positions, c.a1s, c.a3s] for c in confs])
     sub_mean = np.zeros(shape=[3,ctx.top_info.nbases,3])
     
@@ -47,7 +47,9 @@ def compute(ctx:ComputeContext, chunk_size:int, chunk_id:int):
     
     return sub_mean
 
-def mean(traj_info:TrajInfo, top_info:TopInfo, ref_conf:Configuration=None, indexes:List[int]=None, ncpus:int=1) -> Configuration:
+# Most scripts in OAT have their main computation as a function with the same name as the file itself.
+# This function can easily be imported into other scripts (or notebooks) if you want to manage your analysis from Python instead of the shell
+def mean(traj_info:TrajInfo, top_info:TopInfo, ref_conf:Union[Configuration,None]=None, indexes:List[int]=[], ncpus:int=1) -> Configuration:
     """
         Compute the mean structure of a trajectory.
 
@@ -55,7 +57,7 @@ def mean(traj_info:TrajInfo, top_info:TopInfo, ref_conf:Configuration=None, inde
             traj_info (TrajInfo): Information about the trajectory
             top_info (TopInfo): Information about the topology
             ref_conf (Configuration): (optional) The reference configuration to align to. If None, a random configuraiton will be used.
-            indexes (List[int]): (optional) The indexes of the configurations to use. If None, all configurations will be used.
+            indexes (List[int]): (optional) The indexes of nucleotides included in the alignment. If None, all nucleotides will be aligned.
             ncpus (int): (optional) The number of CPUs to use. If None, 1 CPU will be used.
         
         Returns:
@@ -63,7 +65,7 @@ def mean(traj_info:TrajInfo, top_info:TopInfo, ref_conf:Configuration=None, inde
     """
 
     # Handle case where function was called from another script with incomplete arguments
-    if indexes == None:
+    if indexes == []:
         indexes = list(range(top_info.nbases))
     if ref_conf == None:
         ref_conf_id = int(randrange(0, traj_info.nconfs))
@@ -89,14 +91,16 @@ def mean(traj_info:TrajInfo, top_info:TopInfo, ref_conf:Configuration=None, inde
 
     # The parallelizer will call the "compute" function with ctx as an argument using "ncpus".
     # The "callback" function is called after each chunk is computed.
-    # Chunk size is a global variable which can be set by calling `oat config -n <chunk_size>`
+    # The trajectory will be processed in batches of chunk_size configurations
+    # chunk_size is a persistent global variable pulled from UTILS/chunksize.py. 
+    # It can be set by running `oat config -n <chunk_size>` from a command line
     oat_multiprocesser(traj_info.nconfs, ncpus, compute, callback, ctx)
 
     # divide the sum by the number of confs to get the mean 
     mean /= traj_info.nconfs
     pos, a1s, a3s = mean
 
-    # renormalize a1 and a3 because weird things happen if they aren't
+    # renormalize a1 and a3 because weird things happen if they are off by even a little
     a1s = np.array([v/np.linalg.norm(v) for v in a1s])
     a3s = np.array([v/np.linalg.norm(v) for v in a3s])
 
@@ -110,15 +114,19 @@ def cli_parser(prog="mean.py"):
     parser.add_argument('trajectory', type=str, nargs=1, help='The trajectory file you wish to analyze')
     parser.add_argument('-p', metavar='num_cpus', nargs=1, type=int, dest='parallel', help="(optional) How many cores to use")
     parser.add_argument('-o', '--output', metavar='output_file', nargs=1, help='The filename to save the mean structure to')
-    parser.add_argument('-d', '--deviations', metavar='deviation_file', nargs=1, help='Immediatley run oat deviations from the output')
+    parser.add_argument('-d', '--deviations', metavar='deviation_file', nargs=1, help='Immediately run oat deviations from the output')
     parser.add_argument('-i', metavar='index_file', dest='index_file', nargs=1, help='Compute mean structure of a subset of particles from a space-separated list in the provided file')
     parser.add_argument('-a', '--align', metavar='alignment_configuration', nargs=1, help='The id of the configuration to align to, otherwise random')
+    parser.add_argument('-q', metavar='quiet', dest='quiet', action='store_const', const=True, default=False, help="Don't print 'INFO' messages to stderr")
     return parser
 
 # All scripts in oat must have a main method with no arguments to work with the command line interface.
 def main():
     parser = cli_parser(os.path.basename(__file__))
     args = parser.parse_args()
+
+    # Set the verboseness of the logger (0 -> print INFOs, 1 -> only print WARNINGs)
+    logger_settings.set_quiet(args.quiet)
 
     # Verify that dependencies are installed and a good version
     from oxDNA_analysis_tools.config import check
@@ -138,12 +146,12 @@ def main():
             try:
                 indexes = [int(i) for i in indexes]
             except:
-                print("ERROR: The index file must be a space-seperated list of particles.  These can be generated using oxView by clicking the \"Download Selected Base List\" button")
+                raise RuntimeError("The index file must be a space-seperated list of particles.  These can be generated using oxView by clicking the \"Download Selected Base List\" button")
     else:
         indexes = list(range(top_info.nbases))
 
     # -a specifies the id of the reference configuration, defaults to random
-    # Get the reference configuration
+    # Get the reference configuration and bring it back in the box
     if args.align:
         ref_conf_id = int(args.align[0])
     else:
@@ -157,6 +165,8 @@ def main():
     else:
         ncpus = 1
 
+    # Actually perform the mean computation
+    # This is split in to a different function so it can also be called from other scripts if you want
     mean_conf = mean(traj_info, top_info, ref_conf, indexes, ncpus)
 
     #-o names the output file
@@ -164,18 +174,18 @@ def main():
         outfile = args.output[0]
     else:
         outfile = "mean.dat"
-        print("INFO: No outfile name provided, defaulting to \"{}\"".format(outfile), file=stderr)
+        log("No outfile name provided, defaulting to \"{}\"".format(outfile))
 
     # Create the mean configuration from the numpy arrays containing the positions and orientations
     # And write it to the outfile
-    write_conf(outfile, mean_conf)
+    write_conf(outfile, mean_conf, include_vel=traj_info.incl_v)
     print("--- %s seconds ---" % (time.time() - start_time))
 
     # -d runs deviations.py after computing the mean
     if args.deviations:
         from oxDNA_analysis_tools import deviations
         dev_file = args.deviations[0]
-        print("INFO: Launching compute_deviations")
+        log("Launching compute_deviations")
 
         RMSDs, RMSFs = deviations.deviations(traj_info, top_info, mean_conf, indexes, ncpus)
         deviations.output(RMSDs, RMSFs, dev_file, dev_file.split('.')[0]+"_rmsd.png", dev_file.split('.')[0]+"_rmsd_data.json")

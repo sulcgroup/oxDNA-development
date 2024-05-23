@@ -23,13 +23,23 @@ protected:
 	ConfigInfo *_config_info;
 
 	std::string _id;
+	bool _general_format = false;
+	std::string _number_formatter;
+	long long int _precision = 6;
 	long long int _update_every = 0;
+	long long int _times_updated = 0;
 public:
 	BaseObservable();
 
 	virtual ~BaseObservable();
 
+	bool is_update_every_set();
+
 	virtual bool need_updating(llint curr_step);
+
+	virtual bool require_data_on_CPU() {
+		return true;
+	}
 
 	virtual void update_data(llint curr_step);
 
@@ -48,6 +58,10 @@ public:
 	 * @param sim_inp
 	 */
 	virtual void get_settings(input_file &my_inp, input_file &sim_inp);
+
+	virtual void serialise() {
+
+	}
 
 	/**
 	 * @brief Initializes the observable.
