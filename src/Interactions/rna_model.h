@@ -308,6 +308,12 @@ struct Model {
     float p3_x, p3_y, p3_z, p5_x, p5_y, p5_z;
     float RNA_POS_BACK_a1, RNA_POS_BACK_a2, RNA_POS_BACK_a3;
 
+	//not used on CPU, only on cuda
+
+	float soft_excluded_volume_K ;
+	float harmonic_force_K;
+
+
 	Model() {
 // POSITIONS OF INTERACTION CENTERS
 		RNA_POS_BACK = -0.4f;

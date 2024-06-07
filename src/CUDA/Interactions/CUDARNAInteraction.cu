@@ -215,6 +215,10 @@ void copy_Model_to_CUDAModel(Model& model_from, CUDAModel& model_to) {
 	model_to.RNA_POS_BACK_a2 = model_from.RNA_POS_BACK_a2;
 	model_to.RNA_POS_BACK_a3 = model_from.RNA_POS_BACK_a3;
 
+    
+	model_to.soft_excluded_volume_K = model_from.soft_excluded_volume_K ;
+	model_to.harmonic_force_K = model_from.harmonic_force_K;
+
 }
 
 CUDARNAInteraction::CUDARNAInteraction() {
@@ -231,6 +235,10 @@ CUDARNAInteraction::~CUDARNAInteraction() {
 void CUDARNAInteraction::get_settings(input_file &inp) {
 	_use_debye_huckel = false;
 	_mismatch_repulsion = false;
+	_backbone_harmonic = false;
+	_use_soft_exc_vol = false;
+	
+
 	std::string inter_type;
 	if(getInputString(&inp, "interaction_type", inter_type, 0) == KEY_FOUND) {
 		if(inter_type.compare("RNA2") == 0) {
@@ -269,6 +277,77 @@ void CUDARNAInteraction::get_settings(input_file &inp) {
 			}
 
 		}
+		else if(inter_type.compare("RNA_relax") == 0)
+		{
+			int mismatches = 0;
+			if(getInputBoolAsInt(&inp, "mismatch_repulsion", &mismatches, 0) == KEY_FOUND) {
+				_mismatch_repulsion = (bool) mismatches;
+			}
+			if(_mismatch_repulsion) {
+				float temp;
+				if(getInputFloat(&inp, "mismatch_repulsion_strength", &temp, 0) == KEY_FOUND) {
+					_RNA_HYDR_MIS = temp;
+				}
+				else {
+					_RNA_HYDR_MIS = 1;
+				}
+
+			}
+			char tmps[256];
+			_backbone_harmonic = false;
+			getInputString(&inp, "relax_type", tmps, 1);
+			if(strcmp(tmps, "constant_force") == 0) throw oxDNAException("Error constant_force not supported in RNA_relax");
+			else if(strcmp(tmps, "harmonic_force") == 0) 
+			{
+				OX_LOG(Logger::LOG_INFO,"Using harmonic backbone");
+				_backbone_harmonic = true;
+			}
+			else throw oxDNAException("Error while parsing input file: relax_type '%s' not implemented; use constant_force or harmonic_force", tmps);
+
+			float ftmp;
+			if(getInputFloat(&inp, "relax_strength", &ftmp, 0) == KEY_FOUND) {
+				this->model->harmonic_force_K  = (number) ftmp;
+				OX_LOG(Logger::LOG_INFO, "Using spring constant = %f for the RNA_relax interaction", this->model->harmonic_force_K );
+			}
+			else {
+			
+					this->model->harmonic_force_K = (number) 32.;
+					OX_LOG(Logger::LOG_INFO, "Using default strength constant = %f for the RNA_relax interaction", this->model->harmonic_force_K );
+				}
+		
+				
+			
+
+			
+			
+			bool soft_exc_vol = false;
+			if(getInputBool(&inp, "soft_exc_vol", &soft_exc_vol, 0) == KEY_FOUND)  
+			{ 
+				_use_soft_exc_vol = soft_exc_vol;
+			} 
+			else 
+			{
+				_use_soft_exc_vol = false;
+			}
+			if (soft_exc_vol)
+			{
+				if(getInputFloat(&inp, "exc_vol_strength", &ftmp, 0) == KEY_FOUND) {
+					this->model->soft_excluded_volume_K = ftmp;
+				}
+				else 
+				{
+				  	this-> model->soft_excluded_volume_K = 10.;
+				}
+				OX_LOG(Logger::LOG_INFO, "Using strength constant = %f for the RNA_relax soft non-bonded excluded volume interaction",this-> model->soft_excluded_volume_K);
+			}
+
+
+
+
+
+
+
+		}
 	}
 
 	RNAInteraction::get_settings(inp);
@@ -277,6 +356,9 @@ void CUDARNAInteraction::get_settings(input_file &inp) {
 void CUDARNAInteraction::cuda_init(int N) {
 	CUDABaseInteraction::cuda_init(N);
 	RNAInteraction::init();
+
+	printf(" CUDA INIT soft: %d and  backbone %d \n",_use_soft_exc_vol,_backbone_harmonic);
+
 
 	float f_copy = 1.0; //_hb_multiplier;
 	CUDA_SAFE_CALL(cudaMemcpyToSymbol(MD_hb_multi, &f_copy, sizeof(float)));
@@ -372,7 +454,14 @@ void CUDARNAInteraction::cuda_init(int N) {
 		CUDA_SAFE_CALL(cudaMemcpyToSymbol(MD_dh_B, &_debye_huckel_B, sizeof(float)));
 		CUDA_SAFE_CALL(cudaMemcpyToSymbol(MD_dh_minus_kappa, &_minus_kappa, sizeof(float)));
 		CUDA_SAFE_CALL(cudaMemcpyToSymbol(MD_dh_half_charged_ends, &_debye_huckel_half_charged_ends, sizeof(bool)));
+
+        
+
 	}
+
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol(USE_SOFT_EXCLUDED_VOLUME, &_use_soft_exc_vol, sizeof(bool)));
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol(USE_HARMONIC_BACKBONE, &_backbone_harmonic, sizeof(bool)));
+		
 }
 
 void CUDARNAInteraction::_on_T_update() {

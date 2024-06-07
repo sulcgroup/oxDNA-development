@@ -33,7 +33,7 @@ std::shared_ptr<CUDABaseInteraction> CUDAInteractionFactory::make_interaction(in
 	getInputString(&inp, "interaction_type", inter_type, 0);
 
 	if(!inter_type.compare("DNA") || !inter_type.compare("DNA_nomesh") || !inter_type.compare("DNA2")) return std::make_shared<CUDADNAInteraction>();
-	else if(!inter_type.compare("RNA") || !inter_type.compare("RNA2")  ) return std::make_shared<CUDARNAInteraction>();
+	else if(!inter_type.compare("RNA") || !inter_type.compare("RNA2")  || !inter_type.compare("RNA_relax") ) return std::make_shared<CUDARNAInteraction>();
 	else if(!inter_type.compare("LJ")) return std::make_shared<CUDALJInteraction>();
 	else if(!inter_type.compare("patchy")) return std::make_shared<CUDAPatchyInteraction>();
 	else if(inter_type.compare("TEP") == 0) return std::make_shared<CUDATEPInteraction>();

@@ -10,6 +10,7 @@
 
 #include "CUDABaseInteraction.h"
 #include "../../Interactions/RNAInteraction.h"
+#include "../../Interactions/RNAInteraction_relax.h"
 
 /**
  * @brief CUDA implementation of the oxRNA model, as provided by RNAInteraction.
@@ -20,6 +21,11 @@ public:
 	bool _grooving;
 	bool _use_debye_huckel;
 	bool _mismatch_repulsion;
+	bool _use_soft_exc_vol;
+	bool _backbone_harmonic ;
+	float _soft_exc_vol_K;
+	float _backbone_k;
+
 	// copied from DNA2Interaction.h (CPU) (and change c_number -> float), the least bad way of doing things
 	float _salt_concentration;
 	bool _debye_huckel_half_charged_ends;

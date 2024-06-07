@@ -20,6 +20,113 @@ RNAInteraction_relax::RNAInteraction_relax() :
 RNAInteraction_relax::~RNAInteraction_relax() {
 }
 
+number RNAInteraction_relax::_soft_repulsion(const LR_vector &r, LR_vector &force, number a, number rstar, number b, number rc, number K, bool update_forces) {
+	number rnorm = r.norm();
+	
+	number val = (number) 0.f; //energy
+	
+	if(rnorm < rc*rc) {
+		number t = sqrt(rnorm); //rback.module();
+		if(t > rstar) {
+			// smoothing
+			val = K * b * SQR(rc - t);
+			if(update_forces)
+				force = r * ((K * 2 * b) * (rc - t) / t);
+		}
+		else {
+			val =  K*( (number) 1.f - a * SQR(t));
+			if(update_forces)
+				force = r * ( 2 * K * a );
+
+		}
+	}
+	else if (update_forces) {
+		force.x = force.y = force.z = (number) 0.f;
+	}
+
+
+return val;
+
+}
+
+
+
+number RNAInteraction_relax::_nonbonded_excluded_volume(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) {
+	if(_are_bonded(p, q)) {
+		return (number) 0.f;
+	}
+
+	if(!_soft_exc_vol)
+	{
+		return RNAInteraction::_nonbonded_excluded_volume(p,q,compute_r,update_forces);
+	}
+
+	//here we calculate exc volume repulsion that is a quadratic
+
+	LR_vector force(0, 0, 0);
+	LR_vector torquep(0, 0, 0);
+	LR_vector torqueq(0, 0, 0);
+
+	// BASE-BASE
+	LR_vector rcenter = _computed_r + q->int_centers[RNANucleotide::BASE] - p->int_centers[RNANucleotide::BASE];
+
+	number energy = _soft_repulsion(rcenter, force, RNA_SOFT_EXCL_A2, RNA_SOFT_EXCL_RS2, RNA_SOFT_EXCL_B2, RNA_SOFT_EXCL_RC2, this->_soft_exc_vol_K,update_forces);
+	
+	if(update_forces) {
+		torquep = -p->int_centers[RNANucleotide::BASE].cross(force);
+		torqueq = q->int_centers[RNANucleotide::BASE].cross(force);
+
+		p->force -= force;
+		q->force += force;
+	}
+
+	// P-BASE vs. Q-BACK
+	rcenter = _computed_r + q->int_centers[RNANucleotide::BACK] - p->int_centers[RNANucleotide::BASE];
+	energy += _soft_repulsion(rcenter, force, RNA_SOFT_EXCL_A3, RNA_SOFT_EXCL_RS3, RNA_SOFT_EXCL_B3, RNA_SOFT_EXCL_RC3, this->_soft_exc_vol_K,update_forces);// _soft_repulsion(rcenter, force, model->RNA_EXCL_S3, model->RNA_EXCL_R3, model->RNA_EXCL_B3, model->RNA_EXCL_RC3, update_forces);
+
+	if(update_forces) {
+		torquep += -p->int_centers[RNANucleotide::BASE].cross(force);
+		torqueq += q->int_centers[RNANucleotide::BACK].cross(force);
+
+		p->force -= force;
+		q->force += force;
+	}
+
+	// P-BACK vs. Q-BASE
+	rcenter = _computed_r + q->int_centers[RNANucleotide::BASE] - p->int_centers[RNANucleotide::BACK];
+	energy += _soft_repulsion(rcenter, force, RNA_SOFT_EXCL_A4, RNA_SOFT_EXCL_RS4, RNA_SOFT_EXCL_B4, RNA_SOFT_EXCL_RC4, this->_soft_exc_vol_K,update_forces); //_soft_repulsion(rcenter, force, model->RNA_EXCL_S4, model->RNA_EXCL_R4, model->RNA_EXCL_B4, model->RNA_EXCL_RC4, update_forces);
+
+	if(update_forces) {
+		torquep += -p->int_centers[RNANucleotide::BACK].cross(force);
+		torqueq += q->int_centers[RNANucleotide::BASE].cross(force);
+
+		p->force -= force;
+		q->force += force;
+	}
+
+	// BACK-BACK
+	rcenter = _computed_r + q->int_centers[RNANucleotide::BACK] - p->int_centers[RNANucleotide::BACK];
+	energy += _soft_repulsion(rcenter, force, RNA_SOFT_EXCL_A1, RNA_SOFT_EXCL_RS1, RNA_SOFT_EXCL_B1, RNA_SOFT_EXCL_RC1, this->_soft_exc_vol_K,update_forces); //_soft_repulsion(rcenter, force, model->RNA_EXCL_S1, model->RNA_EXCL_R1, model->RNA_EXCL_B1, model->RNA_EXCL_RC1, update_forces);
+
+	if(update_forces) {
+		torquep += -p->int_centers[RNANucleotide::BACK].cross(force);
+		torqueq += q->int_centers[RNANucleotide::BACK].cross(force);
+
+		p->force -= force;
+		q->force += force;
+
+		// we need torques in the reference system of the particle
+		p->torque += p->orientationT * torquep;
+		q->torque += q->orientationT * torqueq;
+	}
+
+	return energy;
+}
+
+
+
+
+
 number RNAInteraction_relax::_backbone(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) {
 	if(!_check_bonded_neighbour(&p, &q, compute_r)) {
 		return (number) 0.f;
@@ -98,4 +205,37 @@ void RNAInteraction_relax::get_settings(input_file &inp) {
 		}
 		OX_LOG(Logger::LOG_INFO, "Using default strength constant = %f for the RNA_relax interaction", _backbone_k);
 	}
+
+	
+	bool soft_exc_vol = false;
+	if(getInputBool(&inp, "soft_exc_vol", &soft_exc_vol, 0) == KEY_FOUND)  
+	{ 
+		_soft_exc_vol = soft_exc_vol;
+	} 
+	else 
+	{
+		_soft_exc_vol = false;
+	}
+	if (soft_exc_vol)
+	{
+		if(getInputFloat(&inp, "exc_vol_strength", &ftmp, 0) == KEY_FOUND) {
+			_soft_exc_vol_K = ftmp;
+		}
+		else 
+		{
+			_soft_exc_vol_K = 10.;
+		}
+		OX_LOG(Logger::LOG_INFO, "Using strength constant = %f for the RNA_relax soft non-bonded exclusion volume interaction",_soft_exc_vol_K);
+	}
+
+
+/*
+ for(double x = 0.; fabs(x) < 1.0; x -= 0.005)
+ {
+  LR_vector force(0,0,0);
+  LR_vector rcenter(0,0,x);
+  number energy = _soft_repulsion(rcenter, force, RNA_SOFT_EXCL_A1, RNA_SOFT_EXCL_RS1, RNA_SOFT_EXCL_B1, RNA_SOFT_EXCL_RC1, 10.,true);
+  printf("@@@ %f %f %f\n",x,energy,force.z);
+ }
+ */
 }
