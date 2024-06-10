@@ -294,28 +294,34 @@ void CUDARNAInteraction::get_settings(input_file &inp) {
 
 			}
 			char tmps[256];
+			float ftmp;
 			_backbone_harmonic = false;
-			getInputString(&inp, "relax_type", tmps, 1);
-			if(strcmp(tmps, "constant_force") == 0) throw oxDNAException("Error constant_force not supported in RNA_relax");
-			else if(strcmp(tmps, "harmonic_force") == 0) 
+			bool btmp = false;
+			if( getInputBool(&inp, "harmonic_backbone", &btmp, 0) == KEY_FOUND && btmp == true)
 			{
 				OX_LOG(Logger::LOG_INFO,"Using harmonic backbone");
 				_backbone_harmonic = true;
-			}
-			else throw oxDNAException("Error while parsing input file: relax_type '%s' not implemented; use constant_force or harmonic_force", tmps);
-
-			float ftmp;
-			if(getInputFloat(&inp, "relax_strength", &ftmp, 0) == KEY_FOUND) {
-				this->model->harmonic_force_K  = (number) ftmp;
-				OX_LOG(Logger::LOG_INFO, "Using spring constant = %f for the RNA_relax interaction", this->model->harmonic_force_K );
-			}
-			else {
-			
-					this->model->harmonic_force_K = (number) 32.;
-					OX_LOG(Logger::LOG_INFO, "Using default strength constant = %f for the RNA_relax interaction", this->model->harmonic_force_K );
+				getInputString(&inp, "relax_type", tmps, 0);
+				if(strcmp(tmps, "constant_force") == 0) throw oxDNAException("Error constant_force not supported in RNA_relax");
+				else if(strcmp(tmps, "harmonic_force") == 0) 
+				{
+					OX_LOG(Logger::LOG_INFO,"Using harmonic backbone");
+					_backbone_harmonic = true;
 				}
-		
+				else throw oxDNAException("Error while parsing input file: relax_type '%s' not implemented; use constant_force or harmonic_force", tmps);
+
 				
+				if(getInputFloat(&inp, "relax_strength", &ftmp, 0) == KEY_FOUND) {
+					this->model->harmonic_force_K  = (number) ftmp;
+					OX_LOG(Logger::LOG_INFO, "Using relaxed spring backbone with spring constant = %f for the RNA_relax interaction", this->model->harmonic_force_K );
+				}
+				else {
+				
+						this->model->harmonic_force_K = (number) 32.;
+						OX_LOG(Logger::LOG_INFO, "Using relaxed spring backbone with default strength constant = %f for the RNA_relax interaction", this->model->harmonic_force_K );
+					}
+			
+			}		
 			
 
 			

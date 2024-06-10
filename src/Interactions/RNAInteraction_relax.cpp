@@ -128,6 +128,11 @@ number RNAInteraction_relax::_nonbonded_excluded_volume(BaseParticle *p, BasePar
 
 
 number RNAInteraction_relax::_backbone(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) {
+	if(!this->_harmonic_spring)
+	{
+		return RNAInteraction::_backbone(p,q,compute_r,update_forces);
+	}
+
 	if(!_check_bonded_neighbour(&p, &q, compute_r)) {
 		return (number) 0.f;
 	}
@@ -158,6 +163,8 @@ number RNAInteraction_relax::_backbone(BaseParticle *p, BaseParticle *q, bool co
 		// conserves energy about as well as the normal RNAInteraction
 		else if(_backbone_type == _harmonic_force) force = rback * (-_backbone_k * rbackr0 / rbackmod);
 
+		//printf("Force is %f %f %f, rback is %f %f %f, rbackr0 is %f, ene is %f , K is %f \n",force.x,force.y, force.z,rback.x,rback.y, rback.z, rbackr0,energy,_backbone_k);
+
 		p->force -= force;
 		q->force += force;
 
@@ -186,12 +193,17 @@ void RNAInteraction_relax::get_settings(input_file &inp) {
 	RNAInteraction::get_settings(inp);
 
 	char tmps[256];
-	getInputString(&inp, "relax_type", tmps, 1);
-	if(strcmp(tmps, "constant_force") == 0) _backbone_type = _constant_force;
-	else if(strcmp(tmps, "harmonic_force") == 0) _backbone_type = _harmonic_force;
-	else throw oxDNAException("Error while parsing input file: relax_type '%s' not implemented; use constant_force or harmonic_force", tmps);
-
 	float ftmp;
+	_harmonic_spring = true;
+
+	if(getInputBool(&inp, "harmonic_backbone", &_harmonic_spring, 0) == KEY_FOUND)
+	{
+	
+	 getInputString(&inp, "relax_type", tmps, 1);
+	 if(strcmp(tmps, "constant_force") == 0) _backbone_type = _constant_force;
+	 else if(strcmp(tmps, "harmonic_force") == 0) _backbone_type = _harmonic_force;
+	 else throw oxDNAException("Error while parsing input file: relax_type '%s' not implemented; use constant_force or harmonic_force", tmps);
+	
 	if(getInputFloat(&inp, "relax_strength", &ftmp, 0) == KEY_FOUND) {
 		_backbone_k = (number) ftmp;
 		OX_LOG(Logger::LOG_INFO, "Using spring constant = %f for the RNA_relax interaction", _backbone_k);
@@ -206,7 +218,7 @@ void RNAInteraction_relax::get_settings(input_file &inp) {
 		OX_LOG(Logger::LOG_INFO, "Using default strength constant = %f for the RNA_relax interaction", _backbone_k);
 	}
 
-	
+	}
 	bool soft_exc_vol = false;
 	if(getInputBool(&inp, "soft_exc_vol", &soft_exc_vol, 0) == KEY_FOUND)  
 	{ 

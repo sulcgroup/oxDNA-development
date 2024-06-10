@@ -311,7 +311,7 @@ __forceinline__ __device__ void _soft_excluded_volume(const c_number4 &r, c_numb
 		c_number t = sqrt(rsqr); //rback.module();
 		if(t > rstar) {
 			// smoothing
-			c_number fmod =  ((K * 2 * b) * (rc - t) / t);
+			c_number fmod =  -((K * 2 * b) * (rc - t) / t);
 			F.x = r.x * fmod;
 			F.y = r.y * fmod;
 			F.z = r.z * fmod;
@@ -319,7 +319,7 @@ __forceinline__ __device__ void _soft_excluded_volume(const c_number4 &r, c_numb
 		}
 		else {
 			F.w =    K*(  1.f - a * rsqr);
-			c_number fmod  = ( 2 * K * a );
+			c_number fmod  = -( 2 * K * a );
 			F.x = r.x * fmod;
 			F.y = r.y * fmod;
 			F.z = r.z * fmod;
@@ -605,9 +605,9 @@ __device__ void _bonded_part(c_number4 &n5pos, c_number4 &n5x, c_number4 &n5y, c
 	}
 	else if (USE_HARMONIC_BACKBONE[0])
 	{
-		//printf("Using HARMONiC BACK\n");
-		Ftmp = rback * (-rnamodel.harmonic_force_K * rbackr0 / rbackmod);
+		Ftmp = rback * (rnamodel.harmonic_force_K * rbackr0 / rbackmod);
 		Ftmp.w  = 0.5 * rnamodel.harmonic_force_K * rbackr0 * rbackr0;
+		//printf("Using HARMONiC BACK: Ftmp is %f %f %f, rback is %f %f %f, rbackr0 is %f, ene is %f \n", Ftmp.x,Ftmp.y,Ftmp.z, rback.x,rback.y,rback.z, rbackr0,Ftmp.w );
 	}
 	else {
 		//printf("Using FENE BACK %d \n", USE_HARMONIC_BACKBONE[0]);
@@ -617,6 +617,7 @@ __device__ void _bonded_part(c_number4 &n5pos, c_number4 &n5x, c_number4 &n5y, c
 	}
 
 	c_number4 Ttmp = (qIsN3) ? _cross(n5pos_back, Ftmp) : _cross(n3pos_back, Ftmp);
+	//printf(" Ttmp is %f %f %f \n",Ttmp.x,Ttmp.y,Ttmp.z);
 	// EXCLUDED VOLUME
 	_bonded_excluded_volume<qIsN3>(r, n3pos_base, n3pos_back, n5pos_base, n5pos_back, Ftmp, Ttmp);
 

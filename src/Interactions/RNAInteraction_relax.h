@@ -67,6 +67,7 @@ protected:
 	int _backbone_type;
 	float _backbone_k;
 	bool _soft_exc_vol;
+	bool _harmonic_spring ; 
 	float _soft_exc_vol_K;
 
 	int _constant_force;
