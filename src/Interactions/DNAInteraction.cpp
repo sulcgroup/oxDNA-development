@@ -221,12 +221,45 @@ DNAInteraction::DNAInteraction() :
 	_mbf_fmax = 0.f;
 	_mbf_finf = 0.f; // roughly 2pN
 
+	_constant_force = 0;
+	_harmonic_force = 1;
+
 	CONFIG_INFO->subscribe("T_updated", [this]() { this->_on_T_update(); });
 }
 
 DNAInteraction::~DNAInteraction() {
 
 }
+
+number DNAInteraction::_soft_repulsion(const LR_vector &r, LR_vector &force, number a, number rstar, number b, number rc, number K, bool update_forces) {
+	number rnorm = r.norm();
+	
+	number val = (number) 0.f; //energy
+	
+	if(rnorm < rc*rc) {
+		number t = sqrt(rnorm); //rback.module();
+		if(t > rstar) {
+			// smoothing
+			val = K * b * SQR(rc - t);
+			if(update_forces)
+				force = r * ((K * 2 * b) * (rc - t) / t);
+		}
+		else {
+			val =  K*( (number) 1.f - a * SQR(t));
+			if(update_forces)
+				force = r * ( 2 * K * a );
+
+		}
+	}
+	else if (update_forces) {
+		force.x = force.y = force.z = (number) 0.f;
+	}
+
+
+return val;
+
+}
+
 
 void DNAInteraction::get_settings(input_file &inp) {
 	BaseInteraction::get_settings(inp);
@@ -265,6 +298,8 @@ void DNAInteraction::get_settings(input_file &inp) {
 	}
 
 	int tmp;
+	float ftmp;
+	char tmps[256];
 	if(getInputBoolAsInt(&inp, "major_minor_grooving", &tmp, 0) == KEY_FOUND) {
 		_grooving = (tmp != 0);
 	}
@@ -272,6 +307,38 @@ void DNAInteraction::get_settings(input_file &inp) {
 	if(getInputBoolAsInt(&inp, "allow_broken_fene", &tmp, 0) == KEY_FOUND) {
 		_allow_broken_fene = (tmp != 0);
 	}
+
+	_harmonic_spring = false;
+	if(getInputBoolAsInt(&inp, "harmonic_backbone", &tmp, 0) == KEY_FOUND) {
+		_harmonic_spring = (tmp != 0);
+	}
+	if(_harmonic_spring)
+	{
+			_fene_r0 = FENE_R0_OXDNA2;
+			getInputString(&inp, "relax_type", tmps, 1);
+			if(strcmp(tmps, "constant_force") == 0) _backbone_type = _constant_force;
+			else if(strcmp(tmps, "harmonic_force") == 0) _backbone_type = _harmonic_force;
+			else throw oxDNAException("Error while parsing input file: relax_type '%s' not implemented; use constant_force or harmonic_force", tmps);
+			
+			if(getInputFloat(&inp, "relax_strength", &ftmp, 0) == KEY_FOUND) {
+				_backbone_k = (number) ftmp;
+				OX_LOG(Logger::LOG_INFO, "Using spring constant = %f for the DNA backbone spring interaction", _backbone_k);
+			}
+			else {
+				if (_backbone_type == _harmonic_force) {
+					_backbone_k = (number) 32.;
+				}
+				else {
+					_backbone_k = (number) 1.;
+				}
+				OX_LOG(Logger::LOG_INFO, "Using default strength constant = %f for the DNA backbone spring interaction", _backbone_k);
+			}
+
+	}
+
+
+	
+
 
 	if(getInputNumber(&inp, "max_backbone_force", &_mbf_fmax, 0) == KEY_FOUND) {
 		_use_mbf = true;
@@ -290,6 +357,28 @@ void DNAInteraction::get_settings(input_file &inp) {
 		// if we use mbf, we should tell the user
 		OX_LOG(Logger::LOG_INFO, "Using a maximum backbone force of %g  (the corresponding mbf_xmax is %g) and a far value of %g", _mbf_fmax, _mbf_xmax, _mbf_finf);
 	}
+
+	_soft_exc_vol = false;
+	if(getInputBoolAsInt(&inp, "soft_exc_vol", &tmp, 0) == KEY_FOUND)  
+	{ 
+		_soft_exc_vol = (tmp != 0);
+	} 
+	else 
+	{
+		_soft_exc_vol = false;
+	}
+	if (_soft_exc_vol)
+	{
+		if(getInputFloat(&inp, "exc_vol_strength", &ftmp, 0) == KEY_FOUND) {
+			_soft_exc_vol_K = ftmp;
+		}
+		else 
+		{
+			_soft_exc_vol_K = 10.;
+		}
+		OX_LOG(Logger::LOG_INFO, "Using strength constant = %f for the DNA_relax soft non-bonded exclusion volume interaction",_soft_exc_vol_K);
+	}
+
 }
 
 void DNAInteraction::init() {
@@ -430,6 +519,14 @@ number DNAInteraction::_backbone(BaseParticle *p, BaseParticle *q, bool compute_
 		if(update_forces)
 			force = rback * (-copysign(1.f, rbackr0) * ((_mbf_fmax - _mbf_finf) * _mbf_xmax / fabs(rbackr0) + _mbf_finf) / rbackmod);
 	}
+	else if(_harmonic_spring)
+	{
+			energy = 0.5 * _backbone_k * rbackr0 * rbackr0;
+			if(update_forces)
+			{
+				force = rback * (-_backbone_k * rbackr0 / rbackmod);
+			}
+	}
 	else {
 		// we check whether we ended up OUTSIDE of the FENE range
 		if(fabs(rbackr0) > FENE_DELTA - DBL_EPSILON) {
@@ -458,6 +555,7 @@ number DNAInteraction::_backbone(BaseParticle *p, BaseParticle *q, bool compute_
 
 	return energy;
 }
+
 
 number DNAInteraction::_bonded_excluded_volume(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) {
 	if(!_check_bonded_neighbour(&p, &q, compute_r)) {
@@ -697,6 +795,83 @@ number DNAInteraction::_stacking(BaseParticle *p, BaseParticle *q, bool compute_
 
 	return energy;
 }
+
+
+number DNAInteraction::_soft_nonbonded_excluded_volume(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) {
+	if(p->is_bonded(q)) {
+		return (number) 0.f;
+	}
+
+	LR_vector force(0, 0, 0);
+	LR_vector torquep(0, 0, 0);
+	LR_vector torqueq(0, 0, 0);
+
+	// BASE-BASE
+	LR_vector rcenter = _computed_r + q->int_centers[DNANucleotide::BASE] - p->int_centers[DNANucleotide::BASE];
+	number energy = _soft_repulsion(rcenter, force, DNA_SOFT_EXCL_A2, DNA_SOFT_EXCL_RS2, DNA_SOFT_EXCL_B2, DNA_SOFT_EXCL_RC2, this->_soft_exc_vol_K,update_forces);
+
+	if(update_forces) {
+		torquep = -p->int_centers[DNANucleotide::BASE].cross(force);
+		torqueq = q->int_centers[DNANucleotide::BASE].cross(force);
+
+		p->force -= force;
+		q->force += force;
+
+		_update_stress_tensor(_computed_r, force);
+	}
+
+	// P-BACK vs. Q-BASE
+	rcenter = _computed_r + q->int_centers[DNANucleotide::BASE] - p->int_centers[DNANucleotide::BACK];
+	energy += _soft_repulsion(rcenter, force, DNA_SOFT_EXCL_A4, DNA_SOFT_EXCL_RS4, DNA_SOFT_EXCL_B4, DNA_SOFT_EXCL_RC4, this->_soft_exc_vol_K,update_forces);
+
+	if(update_forces) {
+		torquep += -p->int_centers[DNANucleotide::BACK].cross(force);
+		torqueq += q->int_centers[DNANucleotide::BASE].cross(force);
+
+		p->force -= force;
+		q->force += force;
+
+		_update_stress_tensor(_computed_r, force);
+	}
+
+	// P-BASE vs. Q-BACK
+	rcenter = _computed_r + q->int_centers[DNANucleotide::BACK] - p->int_centers[DNANucleotide::BASE];
+	energy += _soft_repulsion(rcenter, force, DNA_SOFT_EXCL_A3, DNA_SOFT_EXCL_RS3, DNA_SOFT_EXCL_B3, DNA_SOFT_EXCL_RC3, this->_soft_exc_vol_K,update_forces);
+
+	if(update_forces) {
+		torquep += -p->int_centers[DNANucleotide::BASE].cross(force);
+		torqueq += q->int_centers[DNANucleotide::BACK].cross(force);
+
+		p->force -= force;
+		q->force += force;
+
+		_update_stress_tensor(_computed_r, force);
+	}
+
+	// BACK-BACK
+	rcenter = _computed_r + q->int_centers[DNANucleotide::BACK] - p->int_centers[DNANucleotide::BACK];
+	energy += _soft_repulsion(rcenter, force, DNA_SOFT_EXCL_A1, DNA_SOFT_EXCL_RS1, DNA_SOFT_EXCL_B1, DNA_SOFT_EXCL_RC1, this->_soft_exc_vol_K,update_forces);
+
+	if(update_forces) {
+		torquep += -p->int_centers[DNANucleotide::BACK].cross(force);
+		torqueq += q->int_centers[DNANucleotide::BACK].cross(force);
+
+		p->force -= force;
+		q->force += force;
+
+		_update_stress_tensor(_computed_r, force);
+
+		// we need torques in the reference system of the particle
+		p->torque += p->orientationT * torquep;
+		q->torque += q->orientationT * torqueq;
+	}
+
+	return energy;
+	
+}
+
+
+
 
 number DNAInteraction::_nonbonded_excluded_volume(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) {
 	if(p->is_bonded(q)) {
@@ -1433,7 +1608,7 @@ void DNAInteraction::check_input_sanity(std::vector<BaseParticle*> &particles) {
 			q->set_positions();
 			LR_vector rv = p->pos + p->int_centers[DNANucleotide::BACK] - (q->pos + q->int_centers[DNANucleotide::BACK]);
 			number r = sqrt(rv * rv);
-			if(r > maxd || r < mind) {
+			if( !_harmonic_spring && (r > maxd || r < mind)) {
 				throw oxDNAException("Distance between bonded neighbors %d and %d exceeds acceptable values (d = %lf)", i, p->n3->index, r);
 			}
 		}
@@ -1443,7 +1618,7 @@ void DNAInteraction::check_input_sanity(std::vector<BaseParticle*> &particles) {
 			q->set_positions();
 			LR_vector rv = p->pos + p->int_centers[DNANucleotide::BACK] - (q->pos + q->int_centers[DNANucleotide::BACK]);
 			number r = sqrt(rv * rv);
-			if(r > maxd || r < mind) {
+			if( !_harmonic_spring && (r > maxd || r < mind)) {
 				throw oxDNAException("Distance between bonded neighbors %d and %d exceeds acceptable values (d = %lf)", i, p->n5->index, r);
 			}
 		}

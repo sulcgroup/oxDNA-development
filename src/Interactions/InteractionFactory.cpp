@@ -53,6 +53,7 @@ InteractionPtr InteractionFactory::make_interaction(input_file &inp) {
 	else if(inter_type.compare("DNA_nomesh") == 0) return std::make_shared<DNAInteraction_nomesh>();
 	else if(inter_type.compare("DNA2_nomesh") == 0) return std::make_shared<DNA2Interaction_nomesh>();
 	else if(inter_type.compare("DNA_relax") == 0) return std::make_shared<DNAInteraction_relax>();
+	else if(inter_type.compare("DNA2_relax") == 0) return std::make_shared<DNAInteraction>();
 	else if(inter_type.compare("DNA2") == 0) return std::make_shared<DNA2Interaction>();
 	else if(inter_type.compare("RNA") == 0) return std::make_shared<RNAInteraction>();
 	else if(inter_type.compare("RNA2") == 0) return std::make_shared<RNA2Interaction>();

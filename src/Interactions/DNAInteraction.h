@@ -4,6 +4,30 @@
 
 #include "BaseInteraction.h"
 
+
+ #define DNA_SOFT_EXCL_A1  2.1
+ #define DNA_SOFT_EXCL_RS1 0.669
+ #define DNA_SOFT_EXCL_B1   32.829
+ #define DNA_SOFT_EXCL_RC1  0.711794
+
+ #define DNA_SOFT_EXCL_A2 10.29
+ #define DNA_SOFT_EXCL_RS2  0.29
+ #define DNA_SOFT_EXCL_B2  66.1525
+ #define DNA_SOFT_EXCL_RC2 0.335109
+
+
+ #define DNA_SOFT_EXCL_A3 4.26
+ #define DNA_SOFT_EXCL_RS3 0.45
+ #define DNA_SOFT_EXCL_B3 26.7557
+ #define DNA_SOFT_EXCL_RC3 0.521648
+
+ #define DNA_SOFT_EXCL_A4 4.26
+ #define DNA_SOFT_EXCL_RS4 0.45
+ #define DNA_SOFT_EXCL_B4 26.7557
+ #define DNA_SOFT_EXCL_RC4 0.521648
+
+
+
 /**
  * @brief Handles interactions between DNA nucleotides.
  *
@@ -21,6 +45,16 @@ protected:
 	bool _grooving;
 	/// true by default; set this to false if you want the code to not die when bonded backbones are found to be outside the acceptable FENE range
 	bool _allow_broken_fene;
+
+	bool _harmonic_spring; // bakbone force will be spring potential instead of FENE
+	number _backbone_k; //stiffness of the backbone spring potential
+	int _constant_force ;
+	int _harmonic_force;
+	int _backbone_type;
+	
+
+	bool _soft_exc_vol; //if true, we are using square repulsion for excluded volume
+	number _soft_exc_vol_K; //stiffness of the excluded volume repulsion potential
 
 	/// here we store the r0, which is different in oxDNA and oxDNA2, and is set in the constructor
 	number _fene_r0;
@@ -59,6 +93,12 @@ protected:
 	virtual number _hydrogen_bonding(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces);
 	virtual number _cross_stacking(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces);
 	virtual number _coaxial_stacking(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces);
+
+	//special inteaction for soft repulsion for relaxation
+	number _soft_repulsion(const LR_vector &r, LR_vector &force, number a, number rstar, number b, number rc, number K, bool update_forces) ;
+	number _soft_nonbonded_excluded_volume(BaseParticle *p, BaseParticle *q, bool compute_r, bool update_forces) ;
+
+
 
 	/**
 	 * @brief Custom function that returns f4. This was added to add the possibility to avoid the use of meshes in classes that inherit from this.
