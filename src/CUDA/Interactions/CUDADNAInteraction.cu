@@ -17,6 +17,9 @@ CUDADNAInteraction::CUDADNAInteraction() {
 	_use_debye_huckel = false;
 	_use_oxDNA2_coaxial_stacking = false;
 	_use_oxDNA2_FENE = false;
+
+	_use_soft_exc_vol =false;
+	_backbone_harmonic =false;
 }
 
 CUDADNAInteraction::~CUDADNAInteraction() {
@@ -52,10 +55,77 @@ void CUDADNAInteraction::get_settings(input_file &inp) {
 			getInputFloat(&inp, "dh_strength", &_debye_huckel_prefactor, 0);
 			// End copy from DNA2Interaction
 		}
-	}
+	else if (inter_type.compare("DNA2_relax") == 0)
+	{
+		this->_grooving = true;
+		_use_debye_huckel = false;
+		_use_oxDNA2_coaxial_stacking = true;
+		_use_oxDNA2_FENE = true;		
 
+		printf("Loading dna2_relax-specific settings \n");
+
+		char tmps[256];
+			float ftmp;
+			_backbone_harmonic = false;
+			bool btmp = false;
+			if( getInputBool(&inp, "harmonic_backbone", &btmp, 0) == KEY_FOUND && btmp == true)
+			{
+				OX_LOG(Logger::LOG_INFO,"Using harmonic backbone");
+				_backbone_harmonic = true;
+				getInputString(&inp, "relax_type", tmps, 0);
+				if(strcmp(tmps, "constant_force") == 0) throw oxDNAException("Error constant_force not supported in DNA2_relax");
+				else if(strcmp(tmps, "harmonic_force") == 0) 
+				{
+					OX_LOG(Logger::LOG_INFO,"Using harmonic backbone");
+					_backbone_harmonic = true;
+				}
+				else throw oxDNAException("Error while parsing input file: relax_type '%s' not implemented; use constant_force or harmonic_force", tmps);
+
+				
+				if(getInputFloat(&inp, "relax_strength", &ftmp, 0) == KEY_FOUND) {
+					this->_backbone_K  = (number) ftmp;
+					OX_LOG(Logger::LOG_INFO, "Using relaxed spring backbone with spring constant = %f for the DNA2_relax interaction", this->_backbone_K );
+				}
+				else {
+				
+						this->_backbone_K = (number) 32.;
+						OX_LOG(Logger::LOG_INFO, "Using relaxed spring backbone with default strength constant = %f for the DNA2_relax interaction", this->_backbone_K);
+					}
+			
+			}		
+			
+
+			
+			
+			bool soft_exc_vol = false;
+			if(getInputBool(&inp, "soft_exc_vol", &soft_exc_vol, 0) == KEY_FOUND)  
+			{ 
+				_use_soft_exc_vol = soft_exc_vol;
+			} 
+			else 
+			{
+				_use_soft_exc_vol = false;
+			}
+			if (soft_exc_vol)
+			{
+				if(getInputFloat(&inp, "exc_vol_strength", &ftmp, 0) == KEY_FOUND) {
+					this->_soft_exc_vol_K = ftmp;
+				}
+				else 
+				{
+				  	this-> _soft_exc_vol_K = 10.;
+				}
+				OX_LOG(Logger::LOG_INFO, "Using strength constant = %f for the DNA2_relax soft non-bonded excluded volume interaction",this->_soft_exc_vol_K);
+			}
+
+
+
+	 }
+	}
 	// this needs to be here so that the default value of this->_grooving can be overwritten
 	DNAInteraction::get_settings(inp);
+
+	printf("Loading dna2_relax-specific settings and grooving is %d \n",_grooving);
 }
 
 void CUDADNAInteraction::cuda_init(int N) {
@@ -148,7 +218,32 @@ void CUDADNAInteraction::cuda_init(int N) {
 		CUDA_SAFE_CALL(cudaMemcpyToSymbol(MD_dh_B, &_debye_huckel_B, sizeof(float)));
 		CUDA_SAFE_CALL(cudaMemcpyToSymbol(MD_dh_minus_kappa, &_minus_kappa, sizeof(float)));
 		CUDA_SAFE_CALL(cudaMemcpyToSymbol(MD_dh_half_charged_ends, &_debye_huckel_half_charged_ends, sizeof(bool)));
+
+	
 	}
+
+
+	printf("Copying now: %f %f %d %d \n",_soft_exc_vol_K,_backbone_K, _backbone_harmonic, _use_soft_exc_vol );
+
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol(USE_HARMONIC_BACKBONE, &_backbone_harmonic, sizeof(bool)));
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol(USE_SOFT_EXCLUDED_VOLUME, &_use_soft_exc_vol, sizeof(bool)));
+
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol(_soft_excluded_volume_K, &_soft_exc_vol_K, sizeof(float)));
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol(_harmonic_force_K, &_backbone_K, sizeof(float)));
+
+ //bool _use_soft_exc_vol;
+//	bool _backbone_harmonic ;
+//	float _soft_exc_vol_K;
+//	float _backbone_k;
+
+
+//__constant__ bool USE_HARMONIC_BACKBONE[1];
+//__constant__ bool USE_SOFT_EXCLUDED_VOLUME[1];
+
+//__constant__ float _soft_excluded_volume_K[1];
+//__constant__ float _harmonic_force_K[1];
+
+	
 }
 
 void CUDADNAInteraction::_on_T_update() {

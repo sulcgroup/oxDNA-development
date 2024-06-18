@@ -32,6 +32,13 @@ public:
 	float _debye_huckel_prefactor;
 	float _debye_huckel_lambdafactor;
 
+	//soft exclude volume relax interaction
+	bool _use_soft_exc_vol;
+	bool _backbone_harmonic ;
+	float _soft_exc_vol_K;
+	float _backbone_K;
+
+
 	//the following values are calculated
 	float _debye_huckel_RC; // this is the maximum interaction distance between backbones to interact with DH
 	float _debye_huckel_RHIGH; // distance after which the potential is replaced by a quadratic cut-off

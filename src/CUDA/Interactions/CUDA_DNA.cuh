@@ -38,7 +38,45 @@ __constant__ float MD_dh_B[1];
 __constant__ float MD_dh_minus_kappa[1];
 __constant__ bool MD_dh_half_charged_ends[1];
 
+
+__constant__ bool USE_HARMONIC_BACKBONE[1];
+__constant__ bool USE_SOFT_EXCLUDED_VOLUME[1];
+
+__constant__ float _soft_excluded_volume_K[1];
+__constant__ float _harmonic_force_K[1];
+
 #include "../cuda_utils/CUDA_lr_common.cuh"
+
+__forceinline__ __device__ void _soft_excluded_volume(const c_number4 &r, c_number4 &F, c_number a, c_number rstar, c_number b, c_number rc, c_number K) {
+	c_number rsqr = CUDA_DOT(r, r);
+
+	F.x = F.y = F.z = F.w = (c_number) 0.f;
+
+	if(rsqr < SQR(rc) ) {
+		c_number t = sqrt(rsqr); //rback.module();
+		if(t > rstar) {
+			// smoothing
+			c_number fmod =  -((K * 2 * b) * (rc - t) / t);
+			F.x = r.x * fmod;
+			F.y = r.y * fmod;
+			F.z = r.z * fmod;
+			F.w = K * b * SQR(rc - t);						
+		}
+		else {
+			F.w =    K*(  1.f - a * rsqr);
+			c_number fmod  = -( 2 * K * a );
+			F.x = r.x * fmod;
+			F.y = r.y * fmod;
+			F.z = r.z * fmod;
+	
+		}
+	}
+
+	//printf("F is %f %f %f \n",F.x,F.y,F.z);
+	//exit(1);
+	
+}
+
 
 __forceinline__ __device__ void _excluded_volume(const c_number4 &r, c_number4 &F, c_number sigma, c_number rstar, c_number b, c_number rc) {
 	c_number rsqr = CUDA_DOT(r, r);
@@ -229,6 +267,32 @@ __device__ void _bonded_excluded_volume(const c_number4 &r, const c_number4 &n3p
 	T += torquep1 + torquep2 + torquep3;
 }
 
+
+__device__ void _soft_dna_nonbonded_excluded_volume(const c_number4 &r, const c_number4 &n3pos_base, const c_number4 &n3pos_back, const c_number4 &n5pos_base,
+		const c_number4 &n5pos_back, c_number4 &F, c_number4 &T) {
+
+	c_number4 Ftmp;
+
+	// BASE-BASE
+	c_number4 rcenter = r + n3pos_base - n5pos_base;
+	_soft_excluded_volume(rcenter, Ftmp, DNA_SOFT_EXCL_A2, DNA_SOFT_EXCL_RS2, DNA_SOFT_EXCL_B2, DNA_SOFT_EXCL_RC2, _soft_excluded_volume_K[0]);
+	T += _cross(n5pos_base, Ftmp) ; //: _cross(n3pos_base, Ftmp);
+	F += Ftmp;
+
+	// n5-BASE vs. n3-BACK
+	rcenter = r + n3pos_back - n5pos_base;
+	_soft_excluded_volume(rcenter, Ftmp,  DNA_SOFT_EXCL_A3, DNA_SOFT_EXCL_RS3, DNA_SOFT_EXCL_B3, DNA_SOFT_EXCL_RC3, _soft_excluded_volume_K[0]);
+	T += _cross(n5pos_base, Ftmp); // : _cross(n3pos_back, Ftmp);
+	F += Ftmp;
+
+	// n5-BACK vs. n3-BASE
+	rcenter = r + n3pos_base - n5pos_back;
+	_soft_excluded_volume(rcenter, Ftmp, DNA_SOFT_EXCL_A3, DNA_SOFT_EXCL_RS3, DNA_SOFT_EXCL_B3, DNA_SOFT_EXCL_RC3, _soft_excluded_volume_K[0]);
+	T +=  _cross(n5pos_back, Ftmp) ; // : _cross(n3pos_base, Ftmp);
+	F += Ftmp;		
+}
+
+
 template<bool qIsN3>
 __device__ void _bonded_part(const c_number4 &r, const c_number4 &n5pos, const c_number4 &n5x, const c_number4 &n5y, const c_number4 &n5z, const c_number4 &n3pos, const c_number4 &n3x,
 		const c_number4 &n3y, const c_number4 &n3z, c_number4 &F, c_number4 &T, bool grooving, bool use_oxDNA2_FENE, bool use_mbf,
@@ -264,6 +328,11 @@ __device__ void _bonded_part(const c_number4 &r, const c_number4 &n5pos, const c
 		c_number long_xmax = (mbf_fmax - mbf_finf) * mbf_xmax * logf(mbf_xmax) + mbf_finf * mbf_xmax;
 		Ftmp = rback * (copysignf(1.f, rbackr0) * ((mbf_fmax - mbf_finf) * mbf_xmax / fabsf(rbackr0) + mbf_finf) / rbackmod);
 		Ftmp.w = (mbf_fmax - mbf_finf) * mbf_xmax * logf(fabsf(rbackr0)) + mbf_finf * fabsf(rbackr0) - long_xmax + fene_xmax;
+	}
+	else if(USE_HARMONIC_BACKBONE[0]) {
+		//printf("Harmonic is %f , repulsion is %f, useoxdna2fene is %d, grooving is %d , use harmonic is %d\n",_harmonic_force_K[0], _soft_excluded_volume_K[0], use_oxDNA2_FENE, grooving, USE_HARMONIC_BACKBONE[0] );
+		Ftmp = rback * (_harmonic_force_K[0] * rbackr0 / rbackmod);
+		Ftmp.w  = 0.5 * _harmonic_force_K[0] * rbackr0 * rbackr0;
 	}
 	else {
 		Ftmp = rback * ((FENE_EPS * rbackr0 / (FENE_DELTA2 - SQR(rbackr0))) / rbackmod);
@@ -427,11 +496,22 @@ __device__ void _particle_particle_DNA_interaction(const c_number4 &r, const c_n
 	// excluded volume
 	// BACK-BACK
 	c_number4 Ftmp = make_c_number4(0, 0, 0, 0);
+	c_number4 Ttmp = make_c_number4(0, 0, 0, 0);
+	
 	c_number4 rbackbone = r + qpos_back - ppos_back;
-	_excluded_volume(rbackbone, Ftmp, EXCL_S1, EXCL_R1, EXCL_B1, EXCL_RC1);
-	c_number4 Ttmp = _cross(ppos_back, Ftmp);
-	_bonded_excluded_volume<true>(r, qpos_base, qpos_back, ppos_base, ppos_back, Ftmp, Ttmp);
 
+	if(!USE_SOFT_EXCLUDED_VOLUME[0]) {
+		_excluded_volume(rbackbone, Ftmp, EXCL_S1, EXCL_R1, EXCL_B1, EXCL_RC1);
+		Ttmp = _cross(ppos_back, Ftmp);
+		_bonded_excluded_volume<true>(r, qpos_base, qpos_back, ppos_base, ppos_back, Ftmp, Ttmp);
+	}
+	else {
+		//printf("SOFT is %f , repulsion is %f \n",_harmonic_force_K[0], _soft_excluded_volume_K[0] );
+
+		_soft_excluded_volume(rbackbone, Ftmp, DNA_SOFT_EXCL_A1, DNA_SOFT_EXCL_RS1, DNA_SOFT_EXCL_B1, DNA_SOFT_EXCL_RC1, _soft_excluded_volume_K[0]);
+		Ttmp += _cross(ppos_back, Ftmp);
+	   _soft_dna_nonbonded_excluded_volume(r,qpos_base,qpos_back, ppos_base, ppos_back, Ftmp, Ttmp);
+	}
 	F += Ftmp;
 
 	// DEBYE HUCKEL

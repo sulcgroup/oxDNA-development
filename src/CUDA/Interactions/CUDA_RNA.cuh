@@ -769,7 +769,7 @@ void _particle_particle_RNA_interaction(const c_number4 &r, const c_number4 &ppo
 	else
 	{
 		//printf("Using soft excluded volume \n");
-	    _soft_excluded_volume(rbackbone, Ftmp, RNA_SOFT_EXCL_A2, RNA_SOFT_EXCL_RS2, RNA_SOFT_EXCL_B2, RNA_SOFT_EXCL_RC2, rnamodel.soft_excluded_volume_K);
+	    _soft_excluded_volume(rbackbone, Ftmp, RNA_SOFT_EXCL_A1, RNA_SOFT_EXCL_RS1, RNA_SOFT_EXCL_B1, RNA_SOFT_EXCL_RC1, rnamodel.soft_excluded_volume_K);
 		Ttmp += _cross(ppos_back, Ftmp);
 	   _soft_nonbonded_excluded_volume(r,qpos_base,qpos_back, ppos_base, ppos_back, Ftmp, Ttmp);
 	}
